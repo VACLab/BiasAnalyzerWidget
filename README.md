@@ -1,5 +1,5 @@
 # CohortWidget
-CohortWidget is prototype visualization Python widget that allows the user to compare two healthcare research cohorts. It is designed to work with BiasAnalyzer (https://github.com/VACLab/BiasAnalyzer). The package and widget together allow healthcare researchers to visualize cohort selection bias in Jupyter Notebooks. With BiasAnalyzer the researcher can define a cohort using inclusion and exclusion criteria, then request aggregate cohort statistics from a data source. The resulting data can then be passed to CohortWidget to render the visualization. 
+CohortWidget is prototype visualization Python widget developed in JavaScript with AnyWidget. It allows the user to compare two healthcare research cohorts. It is designed to work with BiasAnalyzer (https://github.com/VACLab/BiasAnalyzer). The package and widget together allow healthcare researchers to visualize cohort selection bias in Jupyter Notebooks. With BiasAnalyzer the researcher can define a cohort using inclusion and exclusion criteria, then request aggregate cohort statistics from a data source. The resulting data can then be passed to CohortWidget to render the visualization. 
 
 Usage:
 1. Imports BiasAnalyzer and CohortWidget into the Jupyter Notebooks project.
