@@ -33,34 +33,10 @@ function render({ model, el }) {
     // Ref: CoPilot
     function prepareConceptsCompareData(concepts1, concepts2) {
 
-        // console.log(`Concepts1: ${JSON.stringify(concepts1)}`);
-        // console.log(`Concepts2: ${JSON.stringify(concepts2)}`);
-
-        // function hellingerDistance(P, Q) {
-        //     if (P.length !== Q.length) {
-        //         throw new Error("The distributions must have the same length.");
-        //     }
-        //
-        //     let sum = 0;
-        //     for (let i = 0; i < P.length; i++) {
-        //         sum += Math.pow(Math.sqrt(P[i]) - Math.sqrt(Q[i]), 2);
-        //     }
-        //
-        //     return (1 / Math.sqrt(2)) * Math.sqrt(sum);
-        // }
-
         let mergedList = concepts1.map(item1 => {
             const item2 = concepts2.find(item => item.concept_code === item1.concept_code);
             return Object.assign({}, item1, item2);
         });
-
-        // handle items that are not in concepts1
-        // concepts2.forEach(item2 => {
-        //     if (!concepts1.find(item1 => item1.concept_code === item2.concept_code)) {
-        //         mergedList.push(item2);
-        //     }
-        // });
-
 
         // Add a key-value pair based on a calculation (e.g., double the age)
         mergedList = mergedList.map(item => {
@@ -94,28 +70,21 @@ function render({ model, el }) {
     }
 
     // DATA
+    var concepts1 = model.get('_concepts1');
+    var race_stats1 = model.get('_race_stats1');
+    var gender_dist1 = model.get('_gender_dist1');
+    var age_dist1 = model.get('_age_dist1');
 
-    // var cohort1 = JSON.parse(model.get('_cohort1').df);
-    var concepts1 = JSON.parse(model.get('_concepts1').df);
-    var race_stats1 = JSON.parse(model.get('_race_stats1').df);
-    var gender_dist1 = JSON.parse(model.get('_gender_dist1').df);
-    var age_dist1 = JSON.parse(model.get('_age_dist1').df);
-
-    // var cohort2 = JSON.parse(model.get('_cohort2').df);
-    var concepts2 = JSON.parse(model.get('_concepts2').df);
-    var race_stats2 = JSON.parse(model.get('_race_stats2').df);
-    var gender_dist2 = JSON.parse(model.get('_gender_dist2').df);
-    var age_dist2 = JSON.parse(model.get('_age_dist2').df);
+    var concepts2 = model.get('_concepts2');
+    var race_stats2 = model.get('_race_stats2');
+    var gender_dist2 = model.get('_gender_dist2');
+    var age_dist2 = model.get('_age_dist2');
 
     // PAGE LAYOUT
 
     // overall container
     let vis_container = document.createElementNS('http://www.w3.org/1999/xhtml', 'div');
     vis_container.setAttribute('class', 'vis-container');
-
-    // for testing
-    // vis_container.appendChild(document.createElement('p')).innerHTML = 'Hello World!';
-    // vis_container.appendChild(document.createElement('p')).innerHTML = JSON.stringify(race_stats);
 
     // demographics container row
     let demographics_row = vis_container.appendChild(document.createElement('div'));
