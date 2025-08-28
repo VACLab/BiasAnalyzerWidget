@@ -354,8 +354,8 @@ function render({ model, el }) {
     }
 
     function ConceptsTable(data, dispatch,
-                                  {data2 = null,
-                                      dimensions = { height: 432, row_height: 30 }} = {}){
+                           {data2 = null,
+                               dimensions = { height: 432, row_height: 30 }} = {}){
         // ==== Validation for required params ====
         if (data === null) {
             throw new Error("drawConceptsTable requires a 'data' parameter.");

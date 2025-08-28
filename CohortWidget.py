@@ -1,22 +1,59 @@
-# from typing import Any
-
 import anywidget
 import traitlets
 import pandas as pd
 import pathlib
 
-# Inherits from AnyWidget
 class CohortWidget(anywidget.AnyWidget):
     _esm = pathlib.Path(__file__).parent / "index.js"
     _css = pathlib.Path(__file__).parent / "index.css"
     initialized = traitlets.Bool(default_value=False).tag(sync=True)
 
-    def __init__(self, cohort1, cohort2=None, cohort1_name='study_cohort', cohort2_name='baseline_cohort'):
+    # List of developer-only keys
+    _dev_keys = [
+        'concepts1', 'race_stats1', 'gender_dist1', 'age_dist1',
+        'concepts2', 'race_stats2', 'gender_dist2', 'age_dist2'
+    ]
+
+    @staticmethod
+    def has_dev_data(kwargs):
+        """Return True if any developer kwargs are provided and not None."""
+        return any(k in kwargs and kwargs[k] is not None for k in CohortWidget._dev_keys)
+
+    def __init__(
+            self,
+            cohort1=None,
+            cohort2=None,
+            cohort1_name='study_cohort',
+            cohort2_name='baseline_cohort',
+            **kwargs
+    ):
+        # Determine if developer kwargs were passed
+        self.is_json_mode = self.has_dev_data(kwargs)
+
+        # Require cohort1 if no developer data
+        if not self.is_json_mode and cohort1 is None:
+            raise ValueError(
+                "Cohort1 cannot be empty. At least one cohort is needed."
+            )
+
         super().__init__()
+
+        # Regular end-user parameters
         self._cohort1 = cohort1
-        self._cohort1_name = cohort1_name
         self._cohort2 = cohort2
+        self._cohort1_name = cohort1_name
         self._cohort2_name = cohort2_name
+
+        # Store developer parameters in attributes
+        self.concepts1 = kwargs.get('concepts1')
+        self.race_stats1 = kwargs.get('race_stats1')
+        self.gender_dist1 = kwargs.get('gender_dist1')
+        self.age_dist1 = kwargs.get('age_dist1')
+
+        self.concepts2 = kwargs.get('concepts2')
+        self.race_stats2 = kwargs.get('race_stats2')
+        self.gender_dist2 = kwargs.get('gender_dist2')
+        self.age_dist2 = kwargs.get('age_dist2')
 
         self.initialized = True
 
@@ -41,23 +78,32 @@ class CohortWidget(anywidget.AnyWidget):
         self.init_widget()
 
     def init_widget(self):
-
-        # The reason for converting to df is to do a little bit of data manipulation.
-
-        df_concepts1 = self.create_dataframe(self._cohort1.get_concept_stats()['condition_occurrence'])
-        df_race_stats1 = self.create_dataframe(self._cohort1.get_stats('race'))
-        df_gender_dist1 = self.create_dataframe(self._cohort1.get_distributions('gender'))
-        df_age_dist1 = self.create_dataframe(self._cohort1.get_distributions('age'))
-        if self._cohort2 is not None:
-            df_concepts2 = self.create_dataframe(self._cohort2.get_concept_stats()['condition_occurrence'])
-            df_race_stats2 = self.create_dataframe(self._cohort2.get_stats('race'))
-            df_gender_dist2 = self.create_dataframe(self._cohort2.get_distributions('gender'))
-            df_age_dist2 = self.create_dataframe(self._cohort2.get_distributions('age'))
+        if not self.is_json_mode:
+            # The reason for converting to df is to do a little bit of data manipulation.
+            df_concepts1 = self.create_dataframe(self._cohort1.get_concept_stats()['condition_occurrence'])
+            df_race_stats1 = self.create_dataframe(self._cohort1.get_stats('race'))
+            df_gender_dist1 = self.create_dataframe(self._cohort1.get_distributions('gender'))
+            df_age_dist1 = self.create_dataframe(self._cohort1.get_distributions('age'))
+            if self._cohort2 is not None:
+                df_concepts2 = self.create_dataframe(self._cohort2.get_concept_stats()['condition_occurrence'])
+                df_race_stats2 = self.create_dataframe(self._cohort2.get_stats('race'))
+                df_gender_dist2 = self.create_dataframe(self._cohort2.get_distributions('gender'))
+                df_age_dist2 = self.create_dataframe(self._cohort2.get_distributions('age'))
+            else:
+                df_concepts2 = self.create_dataframe(None)
+                df_race_stats2 = self.create_dataframe(None)
+                df_gender_dist2 = self.create_dataframe(None)
+                df_age_dist2 = self.create_dataframe(None)
         else:
-            df_concepts2 = self.create_dataframe(None)
-            df_race_stats2 = self.create_dataframe(None)
-            df_gender_dist2 = self.create_dataframe(None)
-            df_age_dist2 = self.create_dataframe(None)
+            df_concepts1 = self.create_dataframe(self.concepts1)
+            df_race_stats1 = self.create_dataframe(self.race_stats1)
+            df_gender_dist1 = self.create_dataframe(self.gender_dist1)
+            df_age_dist1 = self.create_dataframe(self.age_dist1)
+
+            df_concepts2 = self.create_dataframe(self.concepts2)
+            df_race_stats2 = self.create_dataframe(self.race_stats2)
+            df_gender_dist2 = self.create_dataframe(self.gender_dist2)
+            df_age_dist2 = self.create_dataframe(self.age_dist2)
 
         # rename columns so that they can be passed to functions
         df_race_stats1.rename(columns={'race': 'category', 'race_count': 'value'}, inplace=True)
