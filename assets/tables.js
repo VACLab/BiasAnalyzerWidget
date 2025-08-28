@@ -57,6 +57,8 @@ function prepareConceptsCompareData(concepts1, concepts2) {
     return mergedList;
 }
 
+///////////////////////////////// TABLE EVENT HANDLER FUNCTIONS ///////////////////////////////////
+
 function handleFilterConceptsTable(dispatch, row, body_svg) {
     dispatch.on("filter", search_term => {
         const normalized = search_term.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -79,6 +81,9 @@ function handleFilterConceptsTable(dispatch, row, body_svg) {
         body_svg.attr("height", yOffset);
     });
 }
+
+///////////////////////////////// TABLE RENDERING FUNCTIONS ///////////////////////////////////
+
 
 export function ConceptsTable(data, dispatch,
                                   {data2 = null,
