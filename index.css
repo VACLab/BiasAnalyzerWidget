@@ -1,13 +1,14 @@
 /* PAGE LAYOUT */
 
 .vis-container {
-    display: flex;
-    flex-direction: column;
+    /*display: flex;*/
+    /*flex-direction: column;*/
     align-items: center;
     width: 100%;
-    height: auto;
-    overflow: hidden;
+    /*height: 432px; !* match concepts-row height *!*/
+    overflow: visible; /* hide outer vertical scrollbar */
 }
+
 .row-container {
     display: flex;
     justify-content: space-around;
@@ -16,12 +17,15 @@
     overflow: hidden;
     /*margin-bottom: 5px;*/
 }
+
 .col-container {
     flex: 1;
     margin: 5px;
     border: 1px solid black;
     width: 100%;
 }
+
+/* BAR CHART */
 
 /* overall barchart size */
 .barchart{
@@ -58,19 +62,23 @@
     font-size: 14px;
 }
 
-/* TABLE STYLES */
+/* CONCEPTS TABLE */
 
-.concepts-row{
+.concepts-row {
     width: 100%;
-    height: 400px;
+    height: 100%; /* fill vis-container height */
 }
 
 .div-concepts-table-body {
-    margin-top: 30px;
-    width: 100%;
-    height: calc(100% - 30px);
+    margin-top: 0;
     overflow-y: auto;
+    overflow-x: auto;
     background-color: #f9f9f9;
+}
+
+.table-body-wrapper {
+    overflow: auto;
+    max-height: 370px; /* header height removed */
 }
 
 .full-width {
