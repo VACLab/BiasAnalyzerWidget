@@ -116,6 +116,11 @@ function render({ model, el }) {
             series1.name = "cohort 1";
         }
 
+        // default series2 name if missing
+        if (series2 && series2.data && !series2.name) {
+            series2.name = "cohort 2";
+        }
+
         let svg = d3.create('svg')
             .attr('class', 'barchart')
             .attr('width', width)
@@ -186,9 +191,9 @@ function render({ model, el }) {
             .enter()
             .append('rect')
             .attr('class', 'bar1')
-            .attr('x', d => series2.data && series2.data.length > 0 ? xScale(d.category) : xScale(d.category)) // CHANGED: Added conditional logic
+            .attr('x', d => series2.data && series2.data.length > 0 ? xScale(d.category) : xScale(d.category))
             .attr('y', d => yScale(d.value))
-            .attr('width', series2.data && series2.data.length > 0 ? xScale.bandwidth() / 2 : xScale.bandwidth()) // CHANGED: Half width when 2 series
+            .attr('width', series2.data && series2.data.length > 0 ? xScale.bandwidth() / 2 : xScale.bandwidth())
             .attr('height', d => height - margin.bottom - yScale(d.value));
 
         if (series2.data && series2.data.length > 0) {
@@ -226,7 +231,7 @@ function render({ model, el }) {
                 .text(d => d.value);
 
             // only show legend if there are 2 datasets
-            const legendData = [
+            const legend_data = [
                 { label: series1.name, color: 'steelblue' },
                 { label: series2.name, color: 'orange' }
             ];
@@ -235,23 +240,30 @@ function render({ model, el }) {
                 .attr('class', 'legend')
                 .attr('transform', `translate(${margin.left}, ${height - 20})`);
 
-            legend.selectAll('rect')
-                .data(legendData)
+            // Grouped approach: create a group for each legend item
+            const legend_items = legend.selectAll('.legend-item')
+                .data(legend_data)
                 .enter()
-                .append('rect')
-                .attr('x', (d, i) => i * 100) // Adjust spacing as needed
+                .append('g')
+                .attr('class', 'legend-item')
+                .attr('transform', (d, i) => `translate(${i * 120}, 0)`);
+
+            // Add rectangle to each legend item group
+            legend_items.append('rect')
+                .attr('x', 0)
                 .attr('y', 0)
                 .attr('width', 18)
                 .attr('height', 18)
                 .attr('fill', d => d.color);
 
-            legend.selectAll('text')
-                .data(legendData)
-                .enter()
-                .append('text')
-                .attr('x', (d, i) => i * 100 + 24) // Adjust spacing as needed
-                .attr('y', 9)
-                .attr('dy', '0.35em')
+            // Add text to each legend item group
+            legend_items.append('text')
+                .attr('x', 24)
+                .attr('y', 14) // Middle of 18px rect
+                .style('font-family', 'Arial, sans-serif')
+                .style('font-size', '14px')
+                .style('fill', 'black')
+                .style('dominant-baseline', 'middle')
                 .text(d => d.label);
         }
         else{
@@ -299,10 +311,10 @@ function render({ model, el }) {
 
         // Add a key-value pair based on a calculation (e.g., double the age)
         mergedList = mergedList.map(item => {
-            item.difference = (item.study_prevalence ?? 0) - (item.base_prevalence ?? 0);
+            item.difference_in_prevalence = (item.study_prevalence ?? 0) - (item.base_prevalence ?? 0);
 
             // item.bias = hellingerDistance(item.study_prevalence, item.base_prevalence);
-            item.bias = Math.abs(item.difference);
+            item.bias = Math.abs(item.difference_in_prevalence);
             delete item.study_count;
             delete item.base_count;
             delete item.ancestor_concept_id;
@@ -310,7 +322,8 @@ function render({ model, el }) {
             return item;
         });
 
-        const order = ['concept_code', 'concept_name', 'base_prevalence', 'difference', 'study_prevalence', 'bias'];
+        const order = ['concept_code', 'concept_name', 'base_prevalence', 'difference_in_prevalence',
+            'study_prevalence', 'bias'];
 
         mergedList = mergedList.map(item => {
             const rearrangedItem = {};
@@ -322,6 +335,7 @@ function render({ model, el }) {
             return rearrangedItem;
         });
 
+        mergedList.sort((a, b) => b.bias - a.bias);
         mergedList.sort((a, b) => b.bias - a.bias);
 
         // console.log(mergedList);
@@ -423,11 +437,11 @@ function render({ model, el }) {
                 { text: headers_text[2],
                     field: d => (d.base_prevalence !== null ? d.base_prevalence.toFixed(3) : ""),
                     x: 470, width: 120, type: 'text' },
-                { text: headers_text[3], field: "difference", x: 590, width: 240, type: 'compare_bars' },
+                { text: headers_text[3], field: "difference_in_prevalence", x: 590, width: 240, type: 'compare_bars' },
                 { text: headers_text[4],
                     field: d => (d.study_prevalence !== null ? d.study_prevalence.toFixed(3) : ""),
-                    x: 830, width: 120, type: 'text' },
-                { text: headers_text[5], field: "bias", x: 950, width: 120, type: 'bar' }
+                    x: 830, width: 120, type: 'text' }
+                // ,{ text: headers_text[5], field: "bias", x: 950, width: 120, type: 'bar' }
             ];
         }
 
@@ -529,7 +543,7 @@ function render({ model, el }) {
         let max_bias, max_diff, margin = 5;
         if (data2 !== null) {
             max_bias = d3.max(table_data, d => Math.abs(d.bias)) || 0;
-            max_diff = d3.max(table_data, d => Math.abs(d.difference)) || 0;
+            max_diff = d3.max(table_data, d => Math.abs(d.difference_in_prevalence)) || 0;
         }
 
         const biasScale = d3.scaleLinear();
@@ -617,11 +631,11 @@ function render({ model, el }) {
 
                             // Bar
                             g.append("rect")
-                                .attr("x", Math.min(zeroX, barScale(row_data.difference)))
+                                .attr("x", Math.min(zeroX, barScale(row_data.difference_in_prevalence)))
                                 .attr("y", innerY)
-                                .attr("width", Math.abs(barScale(row_data.difference) - zeroX))
+                                .attr("width", Math.abs(barScale(row_data.difference_in_prevalence) - zeroX))
                                 .attr("height", innerH)
-                                .attr("fill", row_data.difference < 0 ? "orange" : "steelblue");
+                                .attr("fill", row_data.difference_in_prevalence < 0 ? "orange" : "steelblue");
 
                             // Text label
                             g.append("text")
@@ -629,7 +643,7 @@ function render({ model, el }) {
                                 .attr("y", row_height / 2 + 4)
                                 .attr("text-anchor", "middle")
                                 .attr("font-size", "10px")
-                                .text(row_data.difference !== null ? row_data.difference.toFixed(3) : "");
+                                .text(row_data.difference_in_prevalence !== null ? row_data.difference_in_prevalence.toFixed(3) : "");
 
                         });
                         break;
