@@ -186,11 +186,10 @@ function render({ model, el }) {
             .enter()
             .append('rect')
             .attr('class', 'bar1')
-            .attr('x', d => xScale(d.category))
+            .attr('x', d => series2.data && series2.data.length > 0 ? xScale(d.category) : xScale(d.category)) // CHANGED: Added conditional logic
             .attr('y', d => yScale(d.value))
-            .attr('width', xScale.bandwidth())
+            .attr('width', series2.data && series2.data.length > 0 ? xScale.bandwidth() / 2 : xScale.bandwidth()) // CHANGED: Half width when 2 series
             .attr('height', d => height - margin.bottom - yScale(d.value));
-
 
         if (series2.data && series2.data.length > 0) {
             // series 2 data bars
@@ -210,7 +209,7 @@ function render({ model, el }) {
                 .enter()
                 .append('text')
                 .attr('class', 'label2')
-                .attr('x', d => xScale(d.category) + xScale.bandwidth() / 2 + 25)
+                .attr('x', d => xScale(d.category) + xScale.bandwidth() / 2 + xScale.bandwidth() / 4) // CHANGED: Fixed positioning
                 .attr('y', d => yScale(d.value) - 5)
                 .attr('text-anchor', 'middle')
                 .text(d => d.value);
@@ -221,7 +220,7 @@ function render({ model, el }) {
                 .enter()
                 .append('text')
                 .attr('class', 'label1')
-                .attr('x', d => xScale(d.category) + xScale.bandwidth() / 2 - xScale.bandwidth() / 4)
+                .attr('x', d => xScale(d.category) + xScale.bandwidth() / 4) // CHANGED: Fixed positioning
                 .attr('y', d => yScale(d.value) - 5)
                 .attr('text-anchor', 'middle')
                 .text(d => d.value);
