@@ -45,15 +45,15 @@ class CohortWidget(anywidget.AnyWidget):
         self._cohort2_name = cohort2_name
 
         # Store developer parameters in attributes
-        self.concepts1 = kwargs.get('concepts1')
-        self.race_stats1 = kwargs.get('race_stats1')
-        self.gender_dist1 = kwargs.get('gender_dist1')
-        self.age_dist1 = kwargs.get('age_dist1')
+        self._concepts1 = kwargs.get('concepts1')
+        self._race_stats1 = kwargs.get('race_stats1')
+        self._gender_dist1 = kwargs.get('gender_dist1')
+        self._age_dist1 = kwargs.get('age_dist1')
 
-        self.concepts2 = kwargs.get('concepts2')
-        self.race_stats2 = kwargs.get('race_stats2')
-        self.gender_dist2 = kwargs.get('gender_dist2')
-        self.age_dist2 = kwargs.get('age_dist2')
+        self._concepts2 = kwargs.get('concepts2')
+        self._race_stats2 = kwargs.get('race_stats2')
+        self._gender_dist2 = kwargs.get('gender_dist2')
+        self._age_dist2 = kwargs.get('age_dist2')
 
         self.initialized = True
 
@@ -78,8 +78,8 @@ class CohortWidget(anywidget.AnyWidget):
         self.init_widget()
 
     def init_widget(self):
+        # The reason for converting to df is to do a little bit of data manipulation.
         if not self.is_json_mode:
-            # The reason for converting to df is to do a little bit of data manipulation.
             df_concepts1 = self.create_dataframe(self._cohort1.get_concept_stats()['condition_occurrence'])
             df_race_stats1 = self.create_dataframe(self._cohort1.get_stats('race'))
             df_gender_dist1 = self.create_dataframe(self._cohort1.get_distributions('gender'))
@@ -95,15 +95,15 @@ class CohortWidget(anywidget.AnyWidget):
                 df_gender_dist2 = self.create_dataframe(None)
                 df_age_dist2 = self.create_dataframe(None)
         else:
-            df_concepts1 = self.create_dataframe(self.concepts1)
-            df_race_stats1 = self.create_dataframe(self.race_stats1)
-            df_gender_dist1 = self.create_dataframe(self.gender_dist1)
-            df_age_dist1 = self.create_dataframe(self.age_dist1)
+            df_concepts1 = self.create_dataframe(self._concepts1)
+            df_race_stats1 = self.create_dataframe(self._race_stats1)
+            df_gender_dist1 = self.create_dataframe(self._gender_dist1)
+            df_age_dist1 = self.create_dataframe(self._age_dist1)
 
-            df_concepts2 = self.create_dataframe(self.concepts2)
-            df_race_stats2 = self.create_dataframe(self.race_stats2)
-            df_gender_dist2 = self.create_dataframe(self.gender_dist2)
-            df_age_dist2 = self.create_dataframe(self.age_dist2)
+            df_concepts2 = self.create_dataframe(self._concepts2)
+            df_race_stats2 = self.create_dataframe(self._race_stats2)
+            df_gender_dist2 = self.create_dataframe(self._gender_dist2)
+            df_age_dist2 = self.create_dataframe(self._age_dist2)
 
         # rename columns so that they can be passed to functions
         df_race_stats1.rename(columns={'race': 'category', 'race_count': 'value'}, inplace=True)
