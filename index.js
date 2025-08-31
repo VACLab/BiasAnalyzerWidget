@@ -310,73 +310,6 @@ function render({ model, el }) {
 
     // <editor-fold desc="---------- CONCEPTS TABLE FUNCTIONS ----------">
 
-    function prepareConceptsCompareData(data1, data2) {
-
-        // console.log('concepts1', data1)
-        // console.log('concepts2', data2)
-
-        let mergedList = data1.map(item1 => {
-            const item2 = data2.find(item => item.concept_code === item1.concept_code);
-            return Object.assign({}, item1, item2);
-        });
-
-        // Add a key-value pair based on a calculation (e.g., double the age)
-        mergedList = mergedList.map(item => {
-            item.difference_in_prevalence = (item.cohort1_prevalence ?? 0) - (item.cohort2_prevalence ?? 0);
-
-            item.bias = Math.abs(item.difference_in_prevalence);
-            delete item.cohort1_count;
-            delete item.cohort2_count;
-            delete item.ancestor_concept_id;
-            delete item.descendant_concept_id;
-            return item;
-        });
-
-        const order = ['concept_code', 'concept_name', 'cohort2_prevalence', 'difference_in_prevalence',
-            'cohort1_prevalence', 'bias'];
-
-        mergedList = mergedList.map(item => {
-            const rearrangedItem = {};
-            order.forEach(key => {
-                if (item.hasOwnProperty(key)) {
-                    rearrangedItem[key] = item[key];
-                }
-            });
-            return rearrangedItem;
-        });
-
-        mergedList.sort((a, b) => b.bias - a.bias);
-        mergedList.sort((a, b) => b.bias - a.bias);
-
-        // console.log('mergedList', mergedList);
-
-        return mergedList;
-    }
-
-    function handleFilterConceptsTable(dispatch, row, body_svg) {
-        dispatch.on("filter", search_term => {
-            const normalized = search_term.toLowerCase().replace(/[^a-z0-9]/g, "");
-            row.style("display", null);
-            row.filter(d => {
-                const code = d.concept_code.toLowerCase();
-                const name = d.concept_name.toLowerCase().replace(/[^a-z0-9]/g, "");
-                return !(code.startsWith(normalized) || name.includes(normalized));
-            }).style("display", "none");
-
-            // Recompute Y positions for visible rows
-            let yOffset = 0;
-            row.filter(function () {
-                return d3.select(this).style("display") !== "none";
-            })
-                .each(function () {
-                    d3.select(this).attr("transform", `translate(0, ${yOffset})`);
-                    yOffset += parseFloat(d3.select(this).select("rect").attr("height"));
-                });
-            body_svg.attr("height", yOffset);
-        });
-    }
-
-
     function ConceptsTable(
         series1, dispatch,
         {
@@ -384,6 +317,73 @@ function render({ model, el }) {
             dimensions = { height: 432, row_height: 30 }
         } = {}
     ){
+        function prepareConceptsCompareData(data1, data2) {
+
+            // console.log('concepts1', data1)
+            // console.log('concepts2', data2)
+
+            let mergedList = data1.map(item1 => {
+                const item2 = data2.find(item => item.concept_code === item1.concept_code);
+                return Object.assign({}, item1, item2);
+            });
+
+            // Add a key-value pair based on a calculation (e.g., double the age)
+            mergedList = mergedList.map(item => {
+                item.difference_in_prevalence = (item.cohort1_prevalence ?? 0) - (item.cohort2_prevalence ?? 0);
+
+                item.bias = Math.abs(item.difference_in_prevalence);
+                delete item.cohort1_count;
+                delete item.cohort2_count;
+                delete item.ancestor_concept_id;
+                delete item.descendant_concept_id;
+                return item;
+            });
+
+            const order = ['concept_code', 'concept_name', 'cohort2_prevalence', 'difference_in_prevalence',
+                'cohort1_prevalence', 'bias'];
+
+            mergedList = mergedList.map(item => {
+                const rearrangedItem = {};
+                order.forEach(key => {
+                    if (item.hasOwnProperty(key)) {
+                        rearrangedItem[key] = item[key];
+                    }
+                });
+                return rearrangedItem;
+            });
+
+            // mergedList.sort((a, b) => b.bias - a.bias);
+            // mergedList.sort((a, b) => b.bias - a.bias);
+
+            // console.log('mergedList', mergedList);
+
+            return mergedList;
+        }
+
+        function handleFilterConcepts(dispatch, row, body_svg) {
+            dispatch.on("filter", search_term => {
+                const normalized = search_term.toLowerCase().replace(/[^a-z0-9]/g, "");
+                row.style("display", null);
+                row.filter(d => {
+                    const code = d.concept_code.toLowerCase();
+                    const name = d.concept_name.toLowerCase().replace(/[^a-z0-9]/g, "");
+                    return !(code.startsWith(normalized) || name.includes(normalized));
+                }).style("display", "none");
+
+                // Recompute Y positions for visible rows
+                let yOffset = 0;
+                row.filter(function () {
+                    return d3.select(this).style("display") !== "none";
+                })
+                    .each(function () {
+                        d3.select(this).attr("transform", `translate(0, ${yOffset})`);
+                        yOffset += parseFloat(d3.select(this).select("rect").attr("height"));
+                    });
+                body_svg.attr("height", yOffset);
+            });
+        }
+
+
         // ==== Validation for required params ====
         if (series1 === null || series1.data === null) {
             throw new Error("ConceptsTable requires at least one cohort.");
@@ -453,15 +453,15 @@ function render({ model, el }) {
         }
         else{
             columns_data = [
-                { text: headers_text[0], field: "concept_code", x: 0, width: 140, type: 'text' },
-                { text: headers_text[1], field: "concept_name", x: 140, width: 330, type: 'text' },
+                { text: headers_text[0], field: "concept_code", x: 0, width: 160, type: 'text' },
+                { text: headers_text[1], field: "concept_name", x: 160, width: 350, type: 'text' },
                 { text: headers_text[2],
                     field: d => (d.cohort2_prevalence !== null ? d.cohort2_prevalence.toFixed(3) : ""),
-                    x: 470, width: 120, type: 'text' },
-                { text: headers_text[3], field: "difference_in_prevalence", x: 590, width: 240, type: 'compare_bars' },
+                    x: 510, width: 160, type: 'text' },
+                { text: headers_text[3], field: "difference_in_prevalence", x: 670, width: 240, type: 'compare_bars' },
                 { text: headers_text[4],
                     field: d => (d.cohort1_prevalence !== null ? d.cohort1_prevalence.toFixed(3) : ""),
-                    x: 830, width: 120, type: 'text' }
+                    x: 910, width: 160, type: 'text' }
                 // ,{ text: headers_text[5], field: "bias", x: 950, width: 120, type: 'bar' }
             ];
         }
@@ -488,14 +488,110 @@ function render({ model, el }) {
             .attr("width", d => d.width)
             .attr("height", row_height)
             .attr("fill", "#d0d0d0")
-            .attr("stroke", "#fff");
+            .attr("stroke", "#fff")
+            .style("cursor", "pointer")
+            .on("click", function(event, d) {
+                handleSort(d);
+            });
 
         header_g.append("text")
             .attr("x", text_offset_x)
             .attr("y", row_height / 2)
             .attr("dy", "0.35em")
             .attr("text-anchor", "start")
-            .text(d => d.text);
+            .style("cursor", "pointer")
+            .style("pointer-events", "all")
+            .text(d => d.text)
+            .on("click", function(event, d) {
+                event.stopPropagation(); // Prevent header rect click
+                handleSort(d);
+            });
+
+        // Add sort indicators
+        header_g.append("text")
+            .attr("class", "sort-indicator")
+            .attr("x", d => d.width - 15)
+            .attr("y", row_height / 2)
+            .attr("dy", "0.35em")
+            .attr("text-anchor", "middle")
+            .attr("font-size", "12px")
+            .attr("fill", "#666")
+            .style("cursor", "pointer")
+            .style("pointer-events", "all")
+            .text("")
+            .on("click", function(event, d) {
+                event.stopPropagation(); // Prevent header click
+                handleSort(d);
+            });
+
+        // Function to handle sorting logic
+        function handleSort(d, skipToggle = false) {
+            // Toggle sort direction (unless we're initializing)
+            if (!skipToggle) {
+                if (d.sortDirection === "asc") {
+                    d.sortDirection = "desc";
+                } else {
+                    d.sortDirection = "asc";
+                }
+            }
+
+            // Clear other column sort indicators
+            columns_data.forEach(col => {
+                if (col !== d) {
+                    col.sortDirection = null;
+                }
+            });
+
+            // Dispatch sort event
+            dispatch.call("sort", null, {
+                column: d.field,
+                direction: d.sortDirection,
+                columnData: d
+            });
+
+            // Update sort indicators using D3 data join
+            const sortIndicators = headers_g.selectAll(".sort-indicator")
+                .data(columns_data);
+
+            sortIndicators
+                .text(col => {
+                    if (col.sortDirection === "asc") return "▲";
+                    if (col.sortDirection === "desc") return "▼";
+                    return "";
+                });
+
+            // Sort the data
+            table_data.sort((a, b) => {
+                let aVal, bVal;
+
+                if (typeof d.field === "function") {
+                    aVal = d.field(a);
+                    bVal = d.field(b);
+                } else {
+                    aVal = a[d.field];
+                    bVal = b[d.field];
+                }
+
+                // Handle null/undefined values
+                if (aVal === null || aVal === undefined) aVal = "";
+                if (bVal === null || bVal === undefined) bVal = "";
+
+                // Convert to numbers if they look numeric
+                if (!isNaN(aVal) && !isNaN(bVal) && aVal !== "" && bVal !== "") {
+                    aVal = parseFloat(aVal);
+                    bVal = parseFloat(bVal);
+                }
+
+                let comparison = 0;
+                if (aVal < bVal) comparison = -1;
+                if (aVal > bVal) comparison = 1;
+
+                return d.sortDirection === "desc" ? -comparison : comparison;
+            });
+
+            // Re-render the table body with sorted data
+            updateTableBody();
+        }
 
         // === Column resizing handle ===
         header_g.append("rect")
@@ -531,12 +627,13 @@ function render({ model, el }) {
                     // Update header positions
                     headers_g.selectAll("g").attr("transform", col => `translate(${col.x},0)`);
 
-                    // Update body cell positions and widths
-                    body_svg.selectAll(".row").each(function(row_data) {
+                    // Update body cell positions and widths using D3 selections
+                    body_svg.selectAll(".row").each(function() {
                         d3.select(this).selectAll(".cell")
-                            .attr("transform", (c, i) => `translate(${columns_data[i].x},0)`)
+                            .data(columns_data)
+                            .attr("transform", col => `translate(${col.x},0)`)
                             .select(".cell-bg")
-                            .attr("width", (c, i) => columns_data[i].width);
+                            .attr("width", col => col.width);
                     });
 
                     // Update body and header SVG width
@@ -554,13 +651,6 @@ function render({ model, el }) {
 
         const rows_g = body_svg.append("g");
 
-        const row = rows_g.selectAll(".row")
-            .data(table_data)
-            .enter()
-            .append("g")
-            .attr("class", "row")
-            .attr("transform", (d, i) => `translate(0, ${i * row_height})`);
-
         let max_bias, max_diff, margin = 5;
         if (series2.data !== null) {
             max_bias = d3.max(table_data, d => Math.abs(d.bias)) || 0;
@@ -571,114 +661,180 @@ function render({ model, el }) {
         const barScale = d3.scaleLinear();
         let zeroX, g, outerHeight, innerY, innerH;
 
-        // per-row, per-column cells
-        columns_data.forEach(col => {
-            const cell = row.append("g")
-                .attr("class", "cell")
-                .attr("transform", `translate(${col.x},0)`);
+        function updateTableBody() {
+            // D3 data join pattern: select, data, enter/update/exit
+            const rows = rows_g.selectAll(".row")
+                .data(table_data, d => d.concept_code || Math.random()); // Use concept_code as key if available
 
-            cell.append("rect")
-                .attr("class", "cell-bg")
-                .attr("width", col.width)
-                .attr("height", row_height)
-                .attr("fill", "#f0f0f0")
-                .attr("stroke", "#ccc");
+            // Remove exiting rows
+            rows.exit().remove();
 
-            if (series2.data === null) {
-                cell.append("text")
-                    .attr("x", text_offset_x)
-                    .attr("y", row_height / 2)
-                    .attr("dy", "0.35em")
-                    .attr("text-anchor", "start")
-                    .text(row_data => {
-                        const val = typeof col.field === "function" ? col.field(row_data) : row_data[col.field];
-                        return val !== null ? val : "";
-                    });
-            } else {
-                switch (col.type) {
-                    case "text":
-                        cell.append("text")
-                            .attr("x", text_offset_x)
-                            .attr("y", row_height / 2)
-                            .attr("dy", "0.35em")
-                            .attr("text-anchor", "start")
-                            .text(row_data => {
-                                const val = typeof col.field === "function" ? col.field(row_data) : row_data[col.field];
-                                return val !== null ? val : "";
+            // Add new rows
+            const rowsEnter = rows.enter()
+                .append("g")
+                .attr("class", "row");
+
+            // Merge enter and update selections
+            const rowsUpdate = rowsEnter.merge(rows);
+
+            // Update positions with transition
+            rowsUpdate
+                .transition()
+                .duration(300)
+                .attr("transform", (d, i) => `translate(0, ${i * row_height})`);
+
+            // Render cells for new rows only
+            renderTableCells(rowsEnter);
+
+            handleFilterConcepts(dispatch, rowsUpdate, body_svg);
+        }
+
+        function renderTableCells(row) {
+            // per-row, per-column cells
+            columns_data.forEach(col => {
+                const cell = row.append("g")
+                    .attr("class", "cell")
+                    .attr("transform", `translate(${col.x},0)`);
+
+                cell.append("rect")
+                    .attr("class", "cell-bg")
+                    .attr("width", col.width)
+                    .attr("height", row_height)
+                    .attr("fill", "#f0f0f0")
+                    .attr("stroke", "#ccc");
+
+                if (series2.data === null) {
+                    cell.append("text")
+                        .attr("x", text_offset_x)
+                        .attr("y", row_height / 2)
+                        .attr("dy", "0.35em")
+                        .attr("text-anchor", "start")
+                        .text(row_data => {
+                            const val = typeof col.field === "function" ? col.field(row_data) : row_data[col.field];
+                            return val !== null ? val : "";
+                        });
+                } else {
+                    switch (col.type) {
+                        case "text":
+                            cell.append("text")
+                                .attr("x", text_offset_x)
+                                .attr("y", row_height / 2)
+                                .attr("dy", "0.35em")
+                                .attr("text-anchor", "start")
+                                .text(row_data => {
+                                    const val = typeof col.field === "function" ? col.field(row_data) : row_data[col.field];
+                                    return val !== null ? val : "";
+                                });
+                            break;
+
+                        case "bar":
+                            biasScale
+                                .domain([0, max_bias || 1])
+                                .range([margin, col.width - margin]);  // full available space inside cell
+
+                            cell.each(function (row_data) {
+                                g = d3.select(this);
+                                outerHeight = row_height;
+                                innerY = margin;
+                                innerH = outerHeight - 2 * margin;
+
+                                // Bar: left-aligned, scaled to bias value
+                                g.append("rect")
+                                    .attr("x", 0)
+                                    .attr("y", innerY)
+                                    .attr("width", biasScale(Math.abs(row_data.bias)))
+                                    .attr("height", innerH)
+                                    .attr("fill", "lightslategrey");
+
+                                // Text: show the bias value
+                                g.append("text")
+                                    .attr("x", 4)  // small left inset
+                                    .attr("y", outerHeight / 2 + 4)
+                                    .attr("font-size", "10px")
+                                    .attr("fill", "black")
+                                    .text(row_data.bias !== null ? row_data.bias.toFixed(3) : "");
                             });
-                        break;
+                            break;
 
-                    case "bar":
-                        biasScale
-                            .domain([0, max_bias || 1])
-                            .range([margin, col.width - margin]);  // full available space inside cell
+                        case "compare_bars":
+                            barScale
+                                .domain([-max_diff || -1, max_diff || 1])
+                                .range([margin, col.width - margin]);  // full available space inside cell
 
-                        cell.each(function (row_data) {
-                            g = d3.select(this);
-                            outerHeight = row_height;
-                            innerY = margin;
-                            innerH = outerHeight - 2 * margin;
+                            zeroX = barScale(0);
 
-                            // Bar: left-aligned, scaled to bias value
-                            g.append("rect")
-                                .attr("x", 0)
-                                .attr("y", innerY)
-                                .attr("width", biasScale(Math.abs(row_data.bias)))
-                                .attr("height", innerH)
-                                .attr("fill", "lightslategrey");
+                            cell.each(function (row_data) {
+                                g = d3.select(this);
+                                outerHeight = row_height;
+                                innerY = 5;
+                                innerH = outerHeight - 2 * margin;
 
-                            // Text: show the bias value
-                            g.append("text")
-                                .attr("x", 4)  // small left inset
-                                .attr("y", outerHeight / 2 + 4)
-                                .attr("font-size", "10px")
-                                .attr("fill", "black")
-                                .text(row_data.bias !== null ? row_data.bias.toFixed(3) : "");
-                        });
-                        break;
+                                // Bar
+                                g.append("rect")
+                                    .attr("x", Math.min(zeroX, barScale(row_data.difference_in_prevalence)))
+                                    .attr("y", innerY)
+                                    .attr("width", Math.abs(barScale(row_data.difference_in_prevalence) - zeroX))
+                                    .attr("height", innerH)
+                                    .attr("fill", row_data.difference_in_prevalence < 0 ? "orange" : "steelblue");
 
-                    case "compare_bars":
-                        barScale
-                            .domain([-max_diff || -1, max_diff || 1])
-                            .range([margin, col.width - margin]);  // full available space inside cell
+                                // Text label - positioned based on value sign
+                                const textX = row_data.difference_in_prevalence >= 0 ?
+                                    Math.min(zeroX, barScale(row_data.difference_in_prevalence)) - 5 : // Left of positive bars
+                                    Math.max(zeroX, barScale(row_data.difference_in_prevalence)) + 5;  // Right of negative bars
 
-                        zeroX = barScale(0);
+                                const textAnchor = row_data.difference_in_prevalence >= 0 ? "end" : "start";
 
-                        cell.each(function (row_data) {
-                            g = d3.select(this);
-                            outerHeight = row_height;
-                            innerY = 5;
-                            innerH = outerHeight - 2 * margin;
+                                g.append("text")
+                                    .attr("x", textX)
+                                    .attr("y", row_height / 2 + 4)
+                                    .attr("text-anchor", textAnchor)
+                                    .attr("font-size", "10px")
+                                    .text(row_data.difference_in_prevalence !== null ? row_data.difference_in_prevalence.toFixed(3) : "");
 
-                            // Bar
-                            g.append("rect")
-                                .attr("x", Math.min(zeroX, barScale(row_data.difference_in_prevalence)))
-                                .attr("y", innerY)
-                                .attr("width", Math.abs(barScale(row_data.difference_in_prevalence) - zeroX))
-                                .attr("height", innerH)
-                                .attr("fill", row_data.difference_in_prevalence < 0 ? "orange" : "steelblue");
+                            });
+                            break;
 
-                            // Text label
-                            g.append("text")
-                                .attr("x", zeroX)
-                                .attr("y", row_height / 2 + 4)
-                                .attr("text-anchor", "middle")
-                                .attr("font-size", "10px")
-                                .text(row_data.difference_in_prevalence !== null ? row_data.difference_in_prevalence.toFixed(3) : "");
-
-                        });
-                        break;
-
-                    default:
-                        throw new Error(`Unknown column type: ${col.type}`);
+                        default:
+                            throw new Error(`Unknown column type: ${col.type}`);
+                    }
                 }
-            }
-        });
+            });
+        }
 
-        handleFilterConceptsTable(dispatch, row, body_svg);
+        // Initial render
+        const row = rows_g.selectAll(".row")
+            .data(table_data)
+            .enter()
+            .append("g")
+            .attr("class", "row")
+            .attr("transform", (d, i) => `translate(0, ${i * row_height})`);
+
+        renderTableCells(row);
+
+        // Initialize with descending sort on difference_in_prevalence if we have comparison data
+        // or on prevalence for single dataset tables
+        if (series2.data !== null) {
+            const diffColumn = columns_data.find(col => col.field === "difference_in_prevalence");
+            if (diffColumn) {
+                diffColumn.sortDirection = "desc";
+                handleSort(diffColumn, true); // Skip toggle for initialization
+            }
+        } else {
+            // For single dataset, sort by prevalence (which uses a function field)
+            const prevalenceColumn = columns_data.find(col =>
+                typeof col.field === "function" && col.field.toString().includes("prevalence")
+            );
+            if (prevalenceColumn) {
+                prevalenceColumn.sortDirection = "desc";
+                handleSort(prevalenceColumn, true); // Skip toggle for initialization
+            }
+        }
+
+        handleFilterConcepts(dispatch, row, body_svg);
 
         return container;
     }
+
     // </editor-fold>
 
     // <editor-fold desc="---------- PAGE LAYOUT ----------">
