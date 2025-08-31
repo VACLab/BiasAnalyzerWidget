@@ -21,9 +21,11 @@ The utils folder contains:
 2. Clone or fork CohortWidget
 
 If using the database:
+
 3. Initializes an instance of the BiasAnalyzer, and connect it to a database storing EHR data standardized to the Observational Medical Outcomes Partnership (OMOP) Common Data Model (CDM).
 4. Request one or two cohorts from BiasAnalyzer by providing it the cohort definition in declarative YAML format.
 5. Pass the cohort(s) to CohortWidget for visualization.
 
 If using the json files:
+
 3. Read the json files and pass the json objects to CohortWidget for visualization.
