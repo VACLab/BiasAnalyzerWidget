@@ -38,10 +38,7 @@ function render({ model, el }) {
     // 1. replacing the underscore with a space, and
     // 2. capitalizing the first letter of each word
     function makeKeysWords (keys, series1_name, series2_name) {
-
-        // TODO: replace 'series_1' and 'series_2' with names being passed i
-
-        console.log('keys', keys);
+        // console.log('keys', keys);
 
         for (let i = 0; i < keys.length; i++) {
             keys[i] = keys[i].replace("cohort1", series1_name);
@@ -315,15 +312,13 @@ function render({ model, el }) {
 
     function prepareConceptsCompareData(data1, data2) {
 
-        console.log('concepts1', data1)
-        console.log('concepts2', data2)
+        // console.log('concepts1', data1)
+        // console.log('concepts2', data2)
 
         let mergedList = data1.map(item1 => {
             const item2 = data2.find(item => item.concept_code === item1.concept_code);
             return Object.assign({}, item1, item2);
         });
-
-        console.log('mergedList', mergedList)
 
         // Add a key-value pair based on a calculation (e.g., double the age)
         mergedList = mergedList.map(item => {
@@ -353,7 +348,7 @@ function render({ model, el }) {
         mergedList.sort((a, b) => b.bias - a.bias);
         mergedList.sort((a, b) => b.bias - a.bias);
 
-        console.log('mergedList', mergedList);
+        // console.log('mergedList', mergedList);
 
         return mergedList;
     }
@@ -423,7 +418,7 @@ function render({ model, el }) {
             table_data = series1.data;
         }
 
-        console.log('table_data', table_data);
+        // console.log('table_data', table_data);
 
         const text_offset_x = 10;
         const { height, row_height } = dimensions;
