@@ -30,16 +30,48 @@ function render({ model, el }) {
         return aDate.toISOString().split('T')[0];
     }
 
+    function isEmptyString(str) {
+        return typeof str === 'string' && str.trim().length === 0;
+    }
+
     // converts keys to readable words by:
     // 1. replacing the underscore with a space, and
     // 2. capitalizing the first letter of each word
-    function makeKeysWords (keys) {
+    function makeKeysWords (keys, series1_name, series2_name) {
+
+        // TODO: replace 'series_1' and 'series_2' with names being passed i
+
+        console.log('keys', keys);
+
+        for (let i = 0; i < keys.length; i++) {
+            keys[i] = keys[i].replace("cohort1", series1_name);
+            keys[i] = keys[i].replace("cohort2", series2_name);
+        }
+
         return keys.map(key => {
             return key.split('_')
                 .map(part => part.charAt(0).toUpperCase() + part.slice(1))
                 .join(' ');
         });
     }
+
+    // function reduce_transform(data) {
+    //     // validate that data is a non-empty array
+    //     if (!Array.isArray(data) || data.length === 0) {
+    //         throw new Error("data must be a non-empty array");
+    //     }
+    //
+    //     // validate that data contains valid objects
+    //     if (!data[0] || typeof data[0] !== 'object') {
+    //         throw new Error("data must contain valid objects");
+    //     }
+    //
+    //     return Object.keys(data[0]).reduce((acc, key) => {
+    //         acc[key] = data.map(d => d[key]);
+    //         return acc;
+    //     }, {});
+    // }
+
     // </editor-fold>
 
     // <editor-fold desc="---------- DEFINE DATA ----------">
@@ -48,11 +80,13 @@ function render({ model, el }) {
     var race_stats1 = model.get('_race_stats1');
     var gender_dist1 = model.get('_gender_dist1');
     var age_dist1 = model.get('_age_dist1');
+    var cohort1_name = model.get('_cohort1_name');
 
     var concepts2 = model.get('_concepts2');
     var race_stats2 = model.get('_race_stats2');
     var gender_dist2 = model.get('_gender_dist2');
     var age_dist2 = model.get('_age_dist2');
+    var cohort2_name = model.get('_cohort2_name');
 
     // </editor-fold>
 
@@ -91,10 +125,11 @@ function render({ model, el }) {
 
     // <editor-fold desc="---------- VERTICAL BAR CHART FUNCTIONS ----------">
 
+    // all parameters are optional at the function signature level, but we are validating within the function
     function VerticalBarChart(
-        series1,  // required
+        series1,
         {
-            series2 = { data: null, name: "cohort 2" },   // default object
+            series2 = { data: null, name: "cohort 2" },
             dimensions: {
                 xlabel = "",
                 ylabel = "",
@@ -104,22 +139,17 @@ function render({ model, el }) {
                 margin = { top: 40, right: 10, bottom: 60, left: 80 },
                 padding = 0.1
             } = {}
-        } = {}  // default for options object
-    ) {
+        } = {}
+    ){
         // validate series1
-        if (!series1 || !series1.data) {
-            throw new Error("SvgVerticalBarChart requires series1 with a 'data' property.");
-        }
-
-        // default series1 name if missing
-        if (!series1.name){
-            series1.name = "cohort 1";
-        }
-
-        // default series2 name if missing
-        if (series2 && series2.data && !series2.name) {
-            series2.name = "cohort 2";
-        }
+        // if (!series1.data) {
+        //     throw new Error("VerticalBarChart requires series1.data.");
+        // }
+        //
+        // // Validate that series1.data is a non-empty array
+        // if (!Array.isArray(series1.data) || series1.data.length === 0) {
+        //     throw new Error("series1.data must be a non-empty array");
+        // }
 
         let svg = d3.create('svg')
             .attr('class', 'barchart')
@@ -145,9 +175,6 @@ function render({ model, el }) {
             .attr('transform', `translate(0, ${height - margin.bottom})`)
             .call(d3.axisBottom(xScale))
             .attr('class', 'axis');
-        // .selectAll('text')
-        // .attr('transform', 'rotate(-45)')
-        // .style('text-anchor', 'end');
 
         // x-axis label
         svg.append('text')
@@ -286,44 +313,32 @@ function render({ model, el }) {
 
     // <editor-fold desc="---------- CONCEPTS TABLE FUNCTIONS ----------">
 
-    function prepareConceptsCompareData(concepts1, concepts2) {
+    function prepareConceptsCompareData(data1, data2) {
 
-        // console.log(`Concepts1: ${JSON.stringify(concepts1)}`);
-        // console.log(`Concepts2: ${JSON.stringify(concepts2)}`);
+        console.log('concepts1', data1)
+        console.log('concepts2', data2)
 
-        // function hellingerDistance(P, Q) {
-        //     if (P.length !== Q.length) {
-        //         throw new Error("The distributions must have the same length.");
-        //     }
-        //
-        //     let sum = 0;
-        //     for (let i = 0; i < P.length; i++) {
-        //         sum += Math.pow(Math.sqrt(P[i]) - Math.sqrt(Q[i]), 2);
-        //     }
-        //
-        //     return (1 / Math.sqrt(2)) * Math.sqrt(sum);
-        // }
-
-        let mergedList = concepts1.map(item1 => {
-            const item2 = concepts2.find(item => item.concept_code === item1.concept_code);
+        let mergedList = data1.map(item1 => {
+            const item2 = data2.find(item => item.concept_code === item1.concept_code);
             return Object.assign({}, item1, item2);
         });
 
+        console.log('mergedList', mergedList)
+
         // Add a key-value pair based on a calculation (e.g., double the age)
         mergedList = mergedList.map(item => {
-            item.difference_in_prevalence = (item.study_prevalence ?? 0) - (item.base_prevalence ?? 0);
+            item.difference_in_prevalence = (item.cohort1_prevalence ?? 0) - (item.cohort2_prevalence ?? 0);
 
-            // item.bias = hellingerDistance(item.study_prevalence, item.base_prevalence);
             item.bias = Math.abs(item.difference_in_prevalence);
-            delete item.study_count;
-            delete item.base_count;
+            delete item.cohort1_count;
+            delete item.cohort2_count;
             delete item.ancestor_concept_id;
             delete item.descendant_concept_id;
             return item;
         });
 
-        const order = ['concept_code', 'concept_name', 'base_prevalence', 'difference_in_prevalence',
-            'study_prevalence', 'bias'];
+        const order = ['concept_code', 'concept_name', 'cohort2_prevalence', 'difference_in_prevalence',
+            'cohort1_prevalence', 'bias'];
 
         mergedList = mergedList.map(item => {
             const rearrangedItem = {};
@@ -338,7 +353,7 @@ function render({ model, el }) {
         mergedList.sort((a, b) => b.bias - a.bias);
         mergedList.sort((a, b) => b.bias - a.bias);
 
-        // console.log(mergedList);
+        console.log('mergedList', mergedList);
 
         return mergedList;
     }
@@ -366,12 +381,21 @@ function render({ model, el }) {
         });
     }
 
-    function ConceptsTable(data, dispatch,
-                           {data2 = null,
-                               dimensions = { height: 432, row_height: 30 }} = {}){
+
+    function ConceptsTable(
+        series1, dispatch,
+        {
+            series2 = { data: null, name: "baseline" },
+            dimensions = { height: 432, row_height: 30 }
+        } = {}
+    ){
         // ==== Validation for required params ====
-        if (data === null) {
-            throw new Error("drawConceptsTable requires a 'data' parameter.");
+        if (series1 === null || series1.data === null) {
+            throw new Error("ConceptsTable requires at least one cohort.");
+        }
+
+        if (isEmptyString(series1.name)) {
+            series1.name = 'study cohort';
         }
 
         if (
@@ -380,24 +404,26 @@ function render({ model, el }) {
             typeof dispatch.call !== "function" ||
             typeof dispatch.on !== "function"
         ) {
-            throw new Error("drawConceptsTable requires a valid d3.dispatch object.");
+            throw new Error("ConceptsTable requires a valid d3.dispatch object.");
         }
 
         // ==== Validate optional params ====
-        if (data2 !== null && !Array.isArray(data2)) {
-            console.warn("drawConceptsTable: 'data2' should be an array (or null).");
+        if (series2 !== null && series2.data !== null && !Array.isArray(series2.data)) {
+            console.warn("ConceptsTable: Series 2 data should be an array (or null).");
         }
 
         if (typeof dimensions !== "object" || dimensions === null) {
-            throw new Error("drawConceptsTable: 'dimensions' must be an object.");
+            throw new Error("ConceptsTable: 'dimensions' must be an object.");
         }
 
         let table_data;
-        if (data2 !== null) {
-            table_data = prepareConceptsCompareData(data, data2);
+        if (series2.data !== null) {
+            table_data = prepareConceptsCompareData(series1.data, series2.data);
         } else {
-            table_data = data;
+            table_data = series1.data;
         }
+
+        console.log('table_data', table_data);
 
         const text_offset_x = 10;
         const { height, row_height } = dimensions;
@@ -413,15 +439,15 @@ function render({ model, el }) {
 
         // === HEADERS ===
 
-        const headers_text = makeKeysWords(Object.keys(table_data[0]));
+        const headers_text = makeKeysWords(Object.keys(table_data[0]), series1.name, series2.name);
         if (!table_data.length) {
-            throw new Error("drawConceptsTable: table_data is empty.");
+            throw new Error("ConceptsTable: table_data is empty.");
         }
 
         // TODO: I have assumed a maximum drawing area width of about 1070px. We may need to change this so that we get
         //       the available canvas size and dynamically resize the visualization accordingly.
         let columns_data;
-        if(data2 === null){
+        if(series2.data === null){
             columns_data = [
                 { text: headers_text[1], field: "concept_code", x: 0, width: 160 },
                 { text: headers_text[0], field: "concept_name", x: 160, width: 590 },
@@ -435,11 +461,11 @@ function render({ model, el }) {
                 { text: headers_text[0], field: "concept_code", x: 0, width: 140, type: 'text' },
                 { text: headers_text[1], field: "concept_name", x: 140, width: 330, type: 'text' },
                 { text: headers_text[2],
-                    field: d => (d.base_prevalence !== null ? d.base_prevalence.toFixed(3) : ""),
+                    field: d => (d.cohort2_prevalence !== null ? d.cohort2_prevalence.toFixed(3) : ""),
                     x: 470, width: 120, type: 'text' },
                 { text: headers_text[3], field: "difference_in_prevalence", x: 590, width: 240, type: 'compare_bars' },
                 { text: headers_text[4],
-                    field: d => (d.study_prevalence !== null ? d.study_prevalence.toFixed(3) : ""),
+                    field: d => (d.cohort1_prevalence !== null ? d.cohort1_prevalence.toFixed(3) : ""),
                     x: 830, width: 120, type: 'text' }
                 // ,{ text: headers_text[5], field: "bias", x: 950, width: 120, type: 'bar' }
             ];
@@ -541,7 +567,7 @@ function render({ model, el }) {
             .attr("transform", (d, i) => `translate(0, ${i * row_height})`);
 
         let max_bias, max_diff, margin = 5;
-        if (data2 !== null) {
+        if (series2.data !== null) {
             max_bias = d3.max(table_data, d => Math.abs(d.bias)) || 0;
             max_diff = d3.max(table_data, d => Math.abs(d.difference_in_prevalence)) || 0;
         }
@@ -563,7 +589,7 @@ function render({ model, el }) {
                 .attr("fill", "#f0f0f0")
                 .attr("stroke", "#ccc");
 
-            if (data2 === null) {
+            if (series2.data === null) {
                 cell.append("text")
                     .attr("x", text_offset_x)
                     .attr("y", row_height / 2)
@@ -691,19 +717,25 @@ function render({ model, el }) {
     // <editor-fold desc="---------- INSERT THE VISUALIZATIONS ----------">
 
     // draw the gender barchart
+    // console.log('gender_dist1', JSON.stringify(gender_dist1, null, 2));
+    // console.log('gender_dist2', JSON.stringify(gender_dist2, null, 2));
     div_gender.appendChild(
-        VerticalBarChart({data: gender_dist1},
-            {series2: {data: gender_dist2}, dimensions: {xlabel: 'Gender'}}).node());
+        VerticalBarChart({data: gender_dist1, name: cohort1_name},
+            {series2: {data: gender_dist2, name: cohort2_name}, dimensions: {xlabel: 'Gender'}}).node());
 
     // draw the race barchart
+    // console.log('race_stats1', JSON.stringify(race_stats1, null, 2));
+    // console.log('race_stats2', JSON.stringify(race_stats2, null, 2));
     div_race.appendChild(
-        VerticalBarChart({data: race_stats1},
-            {series2: {data: race_stats2}, dimensions: {xlabel: 'Race'}}).node());
+        VerticalBarChart({data: race_stats1, name: cohort1_name},
+            {series2: {data: race_stats2, name: cohort2_name}, dimensions: {xlabel: 'Race'}}).node());
 
     // draw the age barchart
+    // console.log('age_dist1', JSON.stringify(age_dist1, null, 2));
+    // console.log('age_dist2', JSON.stringify(age_dist2, null, 2));
     div_age.appendChild(
-        VerticalBarChart({data: age_dist1},
-            {series2: {data: age_dist2}, dimensions: {xlabel: 'Age'}}).node());
+        VerticalBarChart({data: age_dist1, name: cohort1_name},
+            {series2: {data: age_dist2, name: cohort2_name}, dimensions: {xlabel: 'Age'}}).node());
 
     // draw the concepts table search box
     div_concepts_container.appendChild(
@@ -713,11 +745,12 @@ function render({ model, el }) {
     if(Object.keys(concepts2).length === 0) {
         // draw the concepts table
         div_concepts_container.appendChild(
-            ConceptsTable(concepts1, conceptsTableDispatcher).node());
+            ConceptsTable({data: concepts1, name: cohort1_name}, conceptsTableDispatcher).node());
     }
     else{
         div_concepts_container.appendChild(
-            ConceptsTable(concepts1, conceptsTableDispatcher,{data2: concepts2}).node());
+            ConceptsTable({data: concepts1, name: cohort1_name}, conceptsTableDispatcher,
+                {series2: {data: concepts2, name: cohort2_name}}).node());
     }
 
     // attach the visualization to the AnyWidget element

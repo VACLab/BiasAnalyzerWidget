@@ -23,8 +23,8 @@ class CohortWidget(anywidget.AnyWidget):
             self,
             cohort1=None,
             cohort2=None,
-            cohort1_name='study_cohort',
-            cohort2_name='baseline_cohort',
+            cohort1_name='study cohort',
+            cohort2_name='baseline cohort',
             **kwargs
     ):
         # Determine if developer kwargs were passed
@@ -120,9 +120,9 @@ class CohortWidget(anywidget.AnyWidget):
 
         if not df_concepts2.empty:
             # print(df_concepts2)
-            df_concepts1.rename(columns={'count_in_cohort':  'study_count', 'prevalence':  'study_prevalence'},
+            df_concepts1.rename(columns={'count_in_cohort':  'cohort1_count', 'prevalence':  'cohort1_prevalence'},
                                 inplace=True)
-            df_concepts2.rename(columns={'count_in_cohort':  'base_count', 'prevalence':  'base_prevalence'},
+            df_concepts2.rename(columns={'count_in_cohort':  'cohort2_count', 'prevalence':  'cohort2_prevalence'},
                                 inplace=True)
             # print(df_concepts2)
 
@@ -136,6 +136,7 @@ class CohortWidget(anywidget.AnyWidget):
                           df_gender_dist1.to_dict(orient='records'))
         self.create_trait('_age_dist1', traitlets.List(traitlets.Dict()),
                           df_age_dist1.to_dict(orient='records'))
+        self.create_trait('_cohort1_name', traitlets.Unicode(), self._cohort1_name)
 
         self.create_trait('_concepts2', traitlets.List(traitlets.Dict()),
                           df_concepts2.to_dict(orient='records'))
@@ -145,5 +146,6 @@ class CohortWidget(anywidget.AnyWidget):
                           df_gender_dist2.to_dict(orient='records'))
         self.create_trait('_age_dist2', traitlets.List(traitlets.Dict()),
                           df_age_dist2.to_dict(orient='records'))
+        self.create_trait('_cohort2_name', traitlets.Unicode(), self._cohort2_name)
 
         # print("initialization completed")
