@@ -540,7 +540,7 @@ function render({ model, el }) {
                     body_svg.selectAll(".row").each(function(row_data) {
                         d3.select(this).selectAll(".cell")
                             .attr("transform", (c, i) => `translate(${columns_data[i].x},0)`)
-                            .select(".cell_bg")
+                            .select(".cell-bg")
                             .attr("width", (c, i) => columns_data[i].width);
                     });
 
