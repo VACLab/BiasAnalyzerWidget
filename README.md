@@ -11,9 +11,10 @@ Project Directories:
 * yaml: sample yaml files (for running in demo.ipynb)
 
 Utilities:
+
 The utils folder contains:
 * fetch_data_all.ipynb - This is a utility notebook that read each yaml file in a given directory, including subdirectories, gets the data for that file, and outputs the json data to a given output directory. "source_dir" is the path to the read directory. "destination_dir" is the path to the write directory.
-* json_store - This is a directory that contains json files for all the sample yaml files that are available in BiasAnalyzer.
+* json_store - This is a directory that contains json files for all the sample yaml files that are available in BiasAnalyzer. 
 
 Usage:
 1. Setup a python environment and install BiasAnalyzer
