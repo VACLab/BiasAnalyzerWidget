@@ -137,8 +137,8 @@ export function ConceptsTable(data, dispatch,
         throw new Error("drawConceptsTable: table_data is empty.");
     }
 
-    // TODO: I have assumed a maximum drawing area width of about 1070px. We may need to change this so that we get
-    //       the available canvas size and dynamically resize the visualization accordingly.
+    // TODO: We may need to change this so that the table fills
+    //       the available width and dynamically resizes the visualization accordingly.
     let columns_data;
     if(data2 === null){
         columns_data = [

@@ -9,7 +9,6 @@ import * as d3 from 'https://esm.sh/d3@7';
     * Return:
     *   svg: SVG element containing a vertical bar chart
     */
-/* FIXME: Fix overlapping bars */
 /* TODO: Refactor to allow more than two series */
 export function VerticalBarChart(
   series1,  // required
