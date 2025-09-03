@@ -52,6 +52,27 @@ function render({ model, el }) {
         });
     }
 
+    function safeText(getter) {
+        return d => {
+            const v = typeof getter === "function" ? getter(d) : d[getter];
+            return v != null ? String(v) : "";
+        };
+    }
+
+    function safeNumber(getter, decimals = 2) {
+        return d => {
+            const v = typeof getter === "function" ? getter(d) : d[getter];
+            return typeof v === "number" ? v.toFixed(decimals) : "";
+        };
+    }
+
+    function safeDate(getter, formatter = d => d.toLocaleDateString()) {
+        return d => {
+            const v = typeof getter === "function" ? getter(d) : d[getter];
+            return v instanceof Date ? formatter(v) : "";
+        };
+    }
+
     function verifyDispatch(dispatch, component) {
         if (
             !dispatch ||
@@ -111,11 +132,16 @@ function render({ model, el }) {
     * Return:
     *   div: DOM div element containing input box
     */
-    // TODO: Test the changes to this function.
-    function SearchBox(dispatch,
-                       {element_id = '', placeholder= 'Search', label = '', width= 100}) {
+    // TODO: Test this function.
+    function SearchBox(dispatch, options = {}) {
+        let {
+            element_id = '',
+            placeholder = 'Search',
+            label = 'Filter concepts: ',
+            width = 200
+        } = options;
 
-        verifyDispatch(dispatch, 'Searchbox')
+        verifyDispatch(dispatch, 'Searchbox');
 
         let div = d3.create("xhtml:div")
             .attr("xmlns", "http://www.w3.org/1999/xhtml")
@@ -123,20 +149,19 @@ function render({ model, el }) {
 
         let input = div.append('input')
             .attr('type', 'text')
-            .attr('width', width);
+            .attr('placeholder', placeholder.trim())
+            .style('width', width + 'px');
 
-        label = label.trim();
         element_id = element_id.trim();
-        placeholder = placeholder.trim();
+        label = label.trim();
 
-        if(element_id !== "") {
-            input.attr('id', element_id);
-
-            if (label !== ""){
+        if (element_id !== "") {
+            if (label !== "") {
                 div.append("label")
                     .attr("for", element_id)
                     .text(label);
             }
+            input.attr('id', element_id);
         }
 
         input.on('input', function (event) {
@@ -157,43 +182,52 @@ function render({ model, el }) {
     * Return:
     *   div: DOM div element containing input box
     */
-    // TODO: Test this function.
-    function SpinnerBox(dispatch,
-                       {element_id = '', placeholder= 'Search', label = '', width= 100}) {
+    // TODO: Fix problem with label position.
+    function SpinnerBox(dispatch, options = {}) {
+        let {
+            element_id = '',
+            placeholder = '3',
+            label = '',
+            width = 40
+        } = options;
 
-        verifyDispatch(dispatch, 'Spinnerbox')
+        element_id = element_id.trim();
+        placeholder = placeholder.trim();
+        label = label.trim();
+
+        verifyDispatch(dispatch, 'Spinnerbox');
 
         let div = d3.create("xhtml:div")
             .attr("xmlns", "http://www.w3.org/1999/xhtml")
             .style("padding", "10px");
 
         let input = div.append('input')
-            .attr('type', 'text')
-            .attr('width', width)
+            .attr('type', 'number')
             .attr('min', 0)
             .attr('max', 16)
-            .attr('step', 1);
+            .attr('step', 1)
+            .style('width', width + 'px');
 
-        label = label.trim();
-        element_id = element_id.trim();
-        placeholder = placeholder.trim();
 
-        if(element_id !== "") {
-            input.attr('id', element_id);
-
-            if (label !== ""){
-                div.append("label")
+        if (element_id !== '') {
+            if (label !== '') {
+                div.append('label')
                     .attr("for", element_id)
                     .text(label);
             }
+            input.attr('id', element_id);
         }
 
+        if (placeholder !== '')
+            input.attr('placeholder', placeholder);
+
         input.on('input', function (event) {
-            dispatch.call('change-dp', this, event.target.value);  // dispatch filter event
+            dispatch.call('change-dp', this, event.target.value);  // dispatch event
         });
 
         return div;
     }
+
 
     // </editor-fold>
 
@@ -516,26 +550,36 @@ function render({ model, el }) {
         let columns_data;
         if(series2.data === null){
             columns_data = [
-                { text: headers_text[1], field: "concept_code", x: 0, width: 160 },
-                { text: headers_text[0], field: "concept_name", x: 160, width: 590 },
-                { text: headers_text[2], field: "count_in_cohort", x: 750, width: 160 },
-                { text: headers_text[3],
-                    field: d => (d.prevalence !== null ? d.prevalence.toFixed(3) : ""), x: 910, width: 160 }
+                { text: headers_text[1], field: safeText("concept_code"),  x: 0,   width: 160 },
+                { text: headers_text[0], field: safeText("concept_name"),  x: 160, width: 590 },
+                { text: headers_text[2], field: safeText("count_in_cohort"), x: 750, width: 160 },
+                { text: headers_text[3], field: safeNumber("prevalence", 3), x: 910, width: 160 }
             ];
         }
         else{
             columns_data = [
-                { text: headers_text[0], field: "concept_code", x: 0, width: 160, type: 'text' },
-                { text: headers_text[1], field: "concept_name", x: 160, width: 350, type: 'text' },
+                { text: headers_text[0], field: safeText("concept_code"), x: 0, width: 160, type: 'text' },
+                { text: headers_text[1], field: safeText("concept_name"), x: 160, width: 350, type: 'text' },
+
                 { text: headers_text[2],
-                    field: d => (d.cohort2_prevalence !== null ? d.cohort2_prevalence.toFixed(3) : ""),
+                    field: safeNumber("cohort2_prevalence", 3),
                     x: 510, width: 160, type: 'text' },
+
                 { text: headers_text[3], field: "difference_in_prevalence", x: 670, width: 240, type: 'compare_bars' },
+
                 { text: headers_text[4],
-                    field: d => (d.cohort1_prevalence !== null ? d.cohort1_prevalence.toFixed(3) : ""),
+                    field: safeNumber("cohort1_prevalence", 3),
                     x: 910, width: 160, type: 'text' }
                 // ,{ text: headers_text[5], field: "bias", x: 950, width: 120, type: 'bar' }
             ];
+        }
+
+
+        function safeText(getter) {
+            return d => {
+                const v = typeof getter === "function" ? getter(d) : d[getter];
+                return v != null ? String(v) : "";
+            };
         }
 
         const total_table_width = d3.sum(columns_data, d => d.width);
@@ -973,8 +1017,10 @@ function render({ model, el }) {
         SearchBox(conceptsTableDispatcher).node());
 
     // draw the prevalence decimal points spinner box
-    div_concepts_control_container.appendChild(
-        SpinnerBox(conceptsTableDispatcher).node());
+    // TODO: implement event handler
+    // div_concepts_control_container.appendChild(
+    //     SpinnerBox(conceptsTableDispatcher,
+    //         {label: 'Prevalence decimal places: ', element_id: 'concepts_table_prevelance_dp'}).node());
 
     // if there is only one set of concepts, draw a single cohort concepts table
     if(Object.keys(concepts2).length === 0) {
