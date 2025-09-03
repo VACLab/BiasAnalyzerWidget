@@ -14,7 +14,7 @@ function render({ model, el }) {
     // DISPATCHERS
 
     // for handling the concepts table
-    let conceptsTableDispatcher = d3.dispatch('filter','sort');
+    let conceptsTableDispatcher = d3.dispatch('filter', 'sort', 'change-dp');
 
 
     // <editor-fold desc="---------- UTILITY FUNCTIONS ----------"
@@ -50,6 +50,17 @@ function render({ model, el }) {
                 .map(part => part.charAt(0).toUpperCase() + part.slice(1))
                 .join(' ');
         });
+    }
+
+    function verifyDispatch(dispatch, component) {
+        if (
+            !dispatch ||
+            typeof dispatch !== "object" ||
+            typeof dispatch.call !== "function" ||
+            typeof dispatch.on !== "function"
+        ) {
+            throw new Error(component + " requires a valid d3.dispatch object.");
+        }
     }
 
     // function reduce_transform(data) {
@@ -90,29 +101,95 @@ function render({ model, el }) {
     // <editor-fold desc="---------- VISUAL CONTROL FUNCTIONS ----------">
 
     /*
-* draws a search box
-* Parameters:
-*   containerId: type: string - prepended id of container where the control is to be rendered.
-*   dispatch: d3.dispatch instance - user input event handler
-*   label: type: string - label for the control
-*   width: type: string - the width of the input box in pixels
-*   data: type: list of objects - each object should have the keys display (string),
-*                                        and data (anything needed to handle the selection
-*   handleSearch: type: function - callback
-* Return:
-*   div: DOM div element containing input box
-*/
-    function SearchBox(dispatch, label='Search', width=300) {
+    * draws a search box
+    * Parameters:
+    *   dispatch: d3.dispatch instance - user input event handler
+    *   element_id: type: string - unique element id
+    *   placeholder: type: string - placeholder for the control value
+    *   label: type: string - label for the control
+    *   width: type: string - the width of the input box in pixels
+    * Return:
+    *   div: DOM div element containing input box
+    */
+    // TODO: Test the changes to this function.
+    function SearchBox(dispatch,
+                       {element_id = '', placeholder= 'Search', label = '', width= 100}) {
+
+        verifyDispatch(dispatch, 'Searchbox')
+
         let div = d3.create("xhtml:div")
             .attr("xmlns", "http://www.w3.org/1999/xhtml")
             .style("padding", "10px");
 
         let input = div.append('input')
             .attr('type', 'text')
-            .attr('placeholder', label);
+            .attr('width', width);
+
+        label = label.trim();
+        element_id = element_id.trim();
+        placeholder = placeholder.trim();
+
+        if(element_id !== "") {
+            input.attr('id', element_id);
+
+            if (label !== ""){
+                div.append("label")
+                    .attr("for", element_id)
+                    .text(label);
+            }
+        }
 
         input.on('input', function (event) {
             dispatch.call('filter', this, event.target.value);  // dispatch filter event
+        });
+
+        return div;
+    }
+
+    /*
+    * draws a search box
+    * Parameters:
+    *   dispatch: d3.dispatch instance - user input event handler
+    *   element_id: type: string - unique element id
+    *   placeholder: type: string - placeholder for the control value
+    *   label: type: string - label for the control
+    *   width: type: string - the width of the input box in pixels
+    * Return:
+    *   div: DOM div element containing input box
+    */
+    // TODO: Test this function.
+    function SpinnerBox(dispatch,
+                       {element_id = '', placeholder= 'Search', label = '', width= 100}) {
+
+        verifyDispatch(dispatch, 'Spinnerbox')
+
+        let div = d3.create("xhtml:div")
+            .attr("xmlns", "http://www.w3.org/1999/xhtml")
+            .style("padding", "10px");
+
+        let input = div.append('input')
+            .attr('type', 'text')
+            .attr('width', width)
+            .attr('min', 0)
+            .attr('max', 16)
+            .attr('step', 1);
+
+        label = label.trim();
+        element_id = element_id.trim();
+        placeholder = placeholder.trim();
+
+        if(element_id !== "") {
+            input.attr('id', element_id);
+
+            if (label !== ""){
+                div.append("label")
+                    .attr("for", element_id)
+                    .text(label);
+            }
+        }
+
+        input.on('input', function (event) {
+            dispatch.call('change-dp', this, event.target.value);  // dispatch filter event
         });
 
         return div;
@@ -361,6 +438,8 @@ function render({ model, el }) {
         }
 
         function handleFilterConcepts(dispatch, row, body_svg) {
+            verifyDispatch(dispatch, 'handleFilterConcepts');
+
             dispatch.on("filter", search_term => {
                 const normalized = search_term.toLowerCase().replace(/[^a-z0-9]/g, "");
                 row.style("display", null);
@@ -393,14 +472,7 @@ function render({ model, el }) {
             series1.name = 'study cohort';
         }
 
-        if (
-            !dispatch ||
-            typeof dispatch !== "object" ||
-            typeof dispatch.call !== "function" ||
-            typeof dispatch.on !== "function"
-        ) {
-            throw new Error("ConceptsTable requires a valid d3.dispatch object.");
-        }
+        verifyDispatch(dispatch, 'ConceptsTable');
 
         // ==== Validate optional params ====
         if (series2 !== null && series2.data !== null && !Array.isArray(series2.data)) {
@@ -862,6 +934,14 @@ function render({ model, el }) {
     // concepts container
     let div_concepts_container = concepts_row.appendChild(document.createElement('div'));
     div_concepts_container.setAttribute('class', 'col-container');
+    // concepts controls container
+    let div_concepts_control_container = div_concepts_container.appendChild(document.createElement('div'));
+    div_concepts_control_container.setAttribute('class', 'row-container');
+    div_concepts_control_container.style.display = 'flex';
+    div_concepts_control_container.style.justifyContent = 'flex-start';
+    // concepts table container
+    let div_concepts_table_container = div_concepts_container.appendChild(document.createElement('div'));
+    div_concepts_table_container.setAttribute('class', 'row-container');
 
     // </editor-fold>
 
@@ -889,17 +969,21 @@ function render({ model, el }) {
             {series2: {data: age_dist2, name: cohort2_name}, dimensions: {xlabel: 'Age'}}).node());
 
     // draw the concepts table search box
-    div_concepts_container.appendChild(
+    div_concepts_control_container.appendChild(
         SearchBox(conceptsTableDispatcher).node());
+
+    // draw the prevalence decimal points spinner box
+    div_concepts_control_container.appendChild(
+        SpinnerBox(conceptsTableDispatcher).node());
 
     // if there is only one set of concepts, draw a single cohort concepts table
     if(Object.keys(concepts2).length === 0) {
         // draw the concepts table
-        div_concepts_container.appendChild(
+        div_concepts_table_container.appendChild(
             ConceptsTable({data: concepts1, name: cohort1_name}, conceptsTableDispatcher).node());
     }
     else{
-        div_concepts_container.appendChild(
+        div_concepts_table_container.appendChild(
             ConceptsTable({data: concepts1, name: cohort1_name}, conceptsTableDispatcher,
                 {series2: {data: concepts2, name: cohort2_name}}).node());
     }
