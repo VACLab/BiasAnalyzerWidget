@@ -14,7 +14,7 @@ function render({ model, el }) {
     // DISPATCHERS
 
     // for handling the concepts table
-    let conceptsTableDispatcher = d3.dispatch('filter', 'sort', 'change-dp');
+    let conceptsTableDispatcher = d3.dispatch('filter', 'sort', 'change-dp', 'column-resize');
 
 
     // <editor-fold desc="---------- UTILITY FUNCTIONS ----------"
@@ -52,26 +52,27 @@ function render({ model, el }) {
         });
     }
 
-    function safeText(getter) {
-        return d => {
-            const v = typeof getter === "function" ? getter(d) : d[getter];
-            return v != null ? String(v) : "";
-        };
-    }
-
-    function safeNumber(getter, decimals = 2) {
-        return d => {
-            const v = typeof getter === "function" ? getter(d) : d[getter];
-            return typeof v === "number" ? v.toFixed(decimals) : "";
-        };
-    }
-
-    function safeDate(getter, formatter = d => d.toLocaleDateString()) {
-        return d => {
-            const v = typeof getter === "function" ? getter(d) : d[getter];
-            return v instanceof Date ? formatter(v) : "";
-        };
-    }
+    // function safeText(getter) {
+    //     return d => {
+    //         const v = typeof getter === "function" ? getter(d) : d[getter];
+    //         return v != null ? String(v) : "";
+    //     };
+    // }
+    //
+    // function safeNumber(getter, decimals = 6) {
+    //     return d => {
+    //         const fallback = 0;
+    //         const v = typeof getter === "function" ? getter(d) : d[getter];
+    //         return typeof v === "number" ? v.toFixed(decimals) : fallback.toFixed(decimals);
+    //     };
+    // }
+    //
+    // function safeDate(getter, formatter = d => d.toLocaleDateString()) {
+    //     return d => {
+    //         const v = typeof getter === "function" ? getter(d) : d[getter];
+    //         return v instanceof Date ? formatter(v) : "";
+    //     };
+    // }
 
     function verifyDispatch(dispatch, component) {
         if (
@@ -132,12 +133,12 @@ function render({ model, el }) {
     * Return:
     *   div: DOM div element containing input box
     */
-    // TODO: Test this function.
+    // TODO: Test this function to see if the label aspect works.
     function SearchBox(dispatch, options = {}) {
         let {
             element_id = '',
             placeholder = 'Search',
-            label = 'Filter concepts: ',
+            label = '',
             width = 200
         } = options;
 
@@ -172,7 +173,7 @@ function render({ model, el }) {
     }
 
     /*
-    * draws a search box
+    * draws a spinner box
     * Parameters:
     *   dispatch: d3.dispatch instance - user input event handler
     *   element_id: type: string - unique element id
@@ -186,13 +187,14 @@ function render({ model, el }) {
     function SpinnerBox(dispatch, options = {}) {
         let {
             element_id = '',
-            placeholder = '3',
+            value = '6',
             label = '',
             width = 40
         } = options;
 
         element_id = element_id.trim();
-        placeholder = placeholder.trim();
+        if(value === "")
+            value = 0;
         label = label.trim();
 
         verifyDispatch(dispatch, 'Spinnerbox');
@@ -204,8 +206,10 @@ function render({ model, el }) {
         let input = div.append('input')
             .attr('type', 'number')
             .attr('min', 0)
-            .attr('max', 16)
+            .attr('max', 14)
             .attr('step', 1)
+            // .attr('placeholder', placeholder)
+            .attr('value', value)
             .style('width', width + 'px');
 
 
@@ -218,8 +222,8 @@ function render({ model, el }) {
             input.attr('id', element_id);
         }
 
-        if (placeholder !== '')
-            input.attr('placeholder', placeholder);
+        if (value !== '')
+            input.attr('placeholder', value);
 
         input.on('input', function (event) {
             dispatch.call('change-dp', this, event.target.value);  // dispatch event
@@ -428,6 +432,7 @@ function render({ model, el }) {
             dimensions = { height: 432, row_height: 30 }
         } = {}
     ){
+
         function prepareConceptsCompareData(data1, data2) {
 
             // console.log('concepts1', data1)
@@ -471,31 +476,177 @@ function render({ model, el }) {
             return mergedList;
         }
 
-        function handleFilterConcepts(dispatch, row, body_svg) {
-            verifyDispatch(dispatch, 'handleFilterConcepts');
+        // <editor-fold desc="---------- EVENT HANDLER FUNCTIONS ----------">
 
-            dispatch.on("filter", search_term => {
-                const normalized = search_term.toLowerCase().replace(/[^a-z0-9]/g, "");
-                row.style("display", null);
-                row.filter(d => {
-                    const code = d.concept_code.toLowerCase();
-                    const name = d.concept_name.toLowerCase().replace(/[^a-z0-9]/g, "");
-                    return !(code.startsWith(normalized) || name.includes(normalized));
-                }).style("display", "none");
+        function handleChangeDP(dp_value) {
+            // Parse and validate the decimal places value
+            let newDP = parseInt(dp_value);
+            if (isNaN(newDP) || newDP < 0 || newDP > 16) {
+                newDP = 0;
+            }
 
-                // Recompute Y positions for visible rows
-                let yOffset = 0;
-                row.filter(function () {
-                    return d3.select(this).style("display") !== "none";
-                })
-                    .each(function () {
-                        d3.select(this).attr("transform", `translate(0, ${yOffset})`);
-                        yOffset += parseFloat(d3.select(this).select("rect").attr("height"));
-                    });
-                body_svg.attr("height", yOffset);
-            });
+            // Update the prevalence_dp variable (move it outside renderTableCells to module scope)
+            prevalence_dp = newDP;
+
+            // Clear existing table body content
+            rows_g.selectAll(".row").remove();
+
+            // Re-render the table with new decimal places
+            const row = rows_g.selectAll(".row")
+                .data(table_data)
+                .enter()
+                .append("g")
+                .attr("class", "row")
+                .attr("transform", (d, i) => `translate(0, ${i * row_height})`);
+
+            renderTableCells(row);
         }
 
+        function handleColumnResize(data) {
+            const {phase, columnData, element} = data;
+
+            switch (phase) {
+                case "start":
+                    const {startWidth, startX} = data;
+                    columnData.startWidth = startWidth;
+                    columnData.startX = startX;
+                    break;
+
+                case "drag":
+                    const {currentX} = data;
+                    const dx = currentX - columnData.startX;
+                    const newWidth = Math.max(30, columnData.startWidth + dx);
+                    columnData.width = newWidth;
+
+                    // Update header rect using the passed element reference
+                    d3.select(element.parentNode).select("rect").attr("width", newWidth);
+                    // Update resize handle position
+                    d3.select(element).attr("x", newWidth - 5);
+
+                    // Recalculate x positions for all columns after this one
+                    let x = 0;
+                    columns_data.forEach(col => {
+                        col.x = x;
+                        x += col.width;
+                    });
+
+                    // Update header positions
+                    headers_g.selectAll("g").attr("transform", col => `translate(${col.x},0)`);
+
+                    // Update sort indicator positions within each header group
+                    headers_g.selectAll("g").select(".sort-indicator")
+                        .attr("x", d => d.width - 15);
+
+                    // Update body cell positions and widths using D3 selections
+                    body_svg.selectAll(".row").each(function () {
+                        d3.select(this).selectAll(".cell")
+                            .data(columns_data)
+                            .attr("transform", col => `translate(${col.x},0)`)
+                            .select(".cell-bg")
+                            .attr("width", col => col.width);
+                    });
+
+                    // Update body and header SVG width
+                    const totalWidth = d3.sum(columns_data, c => c.width);
+                    body_svg.attr("width", totalWidth);
+                    headers_svg.attr("width", totalWidth);
+                    break;
+
+                case "end":
+                    // Clean up temporary properties
+                    delete columnData.startWidth;
+                    delete columnData.startX;
+                    break;
+            }
+        }
+
+        function handleFilterConcepts(search_term) {
+            const normalized = search_term.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+            // Get current rows (need to re-select since they might have changed due to sorting)
+            const currentRows = rows_g.selectAll(".row");
+
+            currentRows.style("display", null);
+            currentRows.filter(d => {
+                const code = d.concept_code.toLowerCase();
+                const name = d.concept_name.toLowerCase().replace(/[^a-z0-9]/g, "");
+                return !(code.startsWith(normalized) || name.includes(normalized));
+            }).style("display", "none");
+
+            // Recompute Y positions for visible rows
+            let yOffset = 0;
+            currentRows.filter(function () {
+                return d3.select(this).style("display") !== "none";
+            })
+                .each(function () {
+                    d3.select(this).attr("transform", `translate(0, ${yOffset})`);
+                    yOffset += row_height; // Use row_height instead of parsing rect height
+                });
+            body_svg.attr("height", yOffset);
+        }
+
+        // Function to handle sorting logic
+        // TODO: fix jumpy redrawing of the table during sort
+        function handleSort(d, skipToggle = false) {
+            // Toggle sort direction (unless we're initializing)
+            if (!skipToggle) {
+                if (d.sortDirection === "asc") {
+                    d.sortDirection = "desc";
+                } else {
+                    d.sortDirection = "asc";
+                }
+            }
+
+            // Clear other column sort indicators
+            columns_data.forEach(col => {
+                if (col !== d) {
+                    col.sortDirection = null;
+                }
+            });
+
+            // Update sort indicators using D3 data join
+            headers_g.selectAll(".sort-indicator")
+                .text((d, i) => {
+                    const col = columns_data[i];
+                    if (col.sortDirection === "asc") return "▲";
+                    if (col.sortDirection === "desc") return "▼";
+                    return "";
+                });
+
+            // Sort the data
+            table_data.sort((a, b) => {
+                let aVal, bVal;
+
+                if (typeof d.field === "function") {
+                    aVal = d.field(a);
+                    bVal = d.field(b);
+                } else {
+                    aVal = a[d.field];
+                    bVal = b[d.field];
+                }
+
+                // Handle null/undefined values
+                if (aVal === null || aVal === undefined) aVal = "";
+                if (bVal === null || bVal === undefined) bVal = "";
+
+                // Convert to numbers if they look numeric
+                if (!isNaN(aVal) && !isNaN(bVal) && aVal !== "" && bVal !== "") {
+                    aVal = parseFloat(aVal);
+                    bVal = parseFloat(bVal);
+                }
+
+                let comparison = 0;
+                if (aVal < bVal) comparison = -1;
+                if (aVal > bVal) comparison = 1;
+
+                return d.sortDirection === "desc" ? -comparison : comparison;
+            });
+
+            // Re-render the table body with sorted data
+            updateTableBody();
+        }
+
+        // </editor-fold>
 
         // ==== Validation for required params ====
         if (series1 === null || series1.data === null) {
@@ -505,8 +656,6 @@ function render({ model, el }) {
         if (isEmptyString(series1.name)) {
             series1.name = 'study cohort';
         }
-
-        verifyDispatch(dispatch, 'ConceptsTable');
 
         // ==== Validate optional params ====
         if (series2 !== null && series2.data !== null && !Array.isArray(series2.data)) {
@@ -550,36 +699,21 @@ function render({ model, el }) {
         let columns_data;
         if(series2.data === null){
             columns_data = [
-                { text: headers_text[1], field: safeText("concept_code"),  x: 0,   width: 160 },
-                { text: headers_text[0], field: safeText("concept_name"),  x: 160, width: 590 },
-                { text: headers_text[2], field: safeText("count_in_cohort"), x: 750, width: 160 },
-                { text: headers_text[3], field: safeNumber("prevalence", 3), x: 910, width: 160 }
+                { text: headers_text[1], field: "concept_code",  x: 0,   width: 160 },
+                { text: headers_text[0], field: "concept_name",  x: 160, width: 590 },
+                { text: headers_text[2], field: "count_in_cohort", x: 750, width: 160 },
+                { text: headers_text[3], field: "prevalence", x: 910, width: 160 }
             ];
         }
         else{
             columns_data = [
-                { text: headers_text[0], field: safeText("concept_code"), x: 0, width: 160, type: 'text' },
-                { text: headers_text[1], field: safeText("concept_name"), x: 160, width: 350, type: 'text' },
-
-                { text: headers_text[2],
-                    field: safeNumber("cohort2_prevalence", 3),
-                    x: 510, width: 160, type: 'text' },
-
+                { text: headers_text[0], field: "concept_code", x: 0, width: 160, type: 'text' },
+                { text: headers_text[1], field: "concept_name", x: 160, width: 350, type: 'text' },
+                { text: headers_text[2], field: "cohort2_prevalence", x: 510, width: 160, type: 'text' },
                 { text: headers_text[3], field: "difference_in_prevalence", x: 670, width: 240, type: 'compare_bars' },
-
-                { text: headers_text[4],
-                    field: safeNumber("cohort1_prevalence", 3),
-                    x: 910, width: 160, type: 'text' }
+                { text: headers_text[4], field: "cohort1_prevalence", x: 910, width: 160, type: 'text' }
                 // ,{ text: headers_text[5], field: "bias", x: 950, width: 120, type: 'bar' }
             ];
-        }
-
-
-        function safeText(getter) {
-            return d => {
-                const v = typeof getter === "function" ? getter(d) : d[getter];
-                return v != null ? String(v) : "";
-            };
         }
 
         const total_table_width = d3.sum(columns_data, d => d.width);
@@ -607,7 +741,7 @@ function render({ model, el }) {
             .attr("stroke", "#fff")
             .style("cursor", "pointer")
             .on("click", function(event, d) {
-                handleSort(d);
+                dispatch.call("sort", this, d);
             });
 
         header_g.append("text")
@@ -620,7 +754,7 @@ function render({ model, el }) {
             .text(d => d.text)
             .on("click", function(event, d) {
                 event.stopPropagation(); // Prevent header rect click
-                handleSort(d);
+                dispatch.call("sort", this, d);
             });
 
         // Add sort indicators
@@ -637,77 +771,24 @@ function render({ model, el }) {
             .text("")
             .on("click", function(event, d) {
                 event.stopPropagation(); // Prevent header click
-                handleSort(d);
+                dispatch.call("sort", this, d);
             });
 
-        // Function to handle sorting logic
-        function handleSort(d, skipToggle = false) {
-            // Toggle sort direction (unless we're initializing)
-            if (!skipToggle) {
-                if (d.sortDirection === "asc") {
-                    d.sortDirection = "desc";
-                } else {
-                    d.sortDirection = "asc";
-                }
-            }
+        dispatch.on("sort", function(columnData) {
+            handleSort(columnData);
+        });
 
-            // Clear other column sort indicators
-            columns_data.forEach(col => {
-                if (col !== d) {
-                    col.sortDirection = null;
-                }
-            });
+        dispatch.on("filter", function(search_term) {
+            handleFilterConcepts(search_term);
+        });
 
-            // Dispatch sort event
-            dispatch.call("sort", null, {
-                column: d.field,
-                direction: d.sortDirection,
-                columnData: d
-            });
+        dispatch.on("column-resize", function(columnData) {
+            handleColumnResize(columnData);
+        });
 
-            // Update sort indicators using D3 data join
-            const sortIndicators = headers_g.selectAll(".sort-indicator")
-                .data(columns_data);
-
-            sortIndicators
-                .text(col => {
-                    if (col.sortDirection === "asc") return "▲";
-                    if (col.sortDirection === "desc") return "▼";
-                    return "";
-                });
-
-            // Sort the data
-            table_data.sort((a, b) => {
-                let aVal, bVal;
-
-                if (typeof d.field === "function") {
-                    aVal = d.field(a);
-                    bVal = d.field(b);
-                } else {
-                    aVal = a[d.field];
-                    bVal = b[d.field];
-                }
-
-                // Handle null/undefined values
-                if (aVal === null || aVal === undefined) aVal = "";
-                if (bVal === null || bVal === undefined) bVal = "";
-
-                // Convert to numbers if they look numeric
-                if (!isNaN(aVal) && !isNaN(bVal) && aVal !== "" && bVal !== "") {
-                    aVal = parseFloat(aVal);
-                    bVal = parseFloat(bVal);
-                }
-
-                let comparison = 0;
-                if (aVal < bVal) comparison = -1;
-                if (aVal > bVal) comparison = 1;
-
-                return d.sortDirection === "desc" ? -comparison : comparison;
-            });
-
-            // Re-render the table body with sorted data
-            updateTableBody();
-        }
+        dispatch.on("change-dp", function(dp_value) {
+            handleChangeDP(dp_value);
+        });
 
         // === Column resizing handle ===
         header_g.append("rect")
@@ -720,42 +801,33 @@ function render({ model, el }) {
             .style("fill", "transparent")
             .call(d3.drag()
                 .on("start", function(event, d) {
-                    d.startWidth = d.width;       // store starting width
-                    d.startX = event.x;           // store starting mouse X
+                    dispatch.call("column-resize", this, {
+                        phase: "start",
+                        columnData: d,
+                        startWidth: d.width,
+                        startX: event.x,
+                        element: this,  // Pass the DOM element reference
+                        event: event
+                    });
                 })
                 .on("drag", function(event, d) {
-                    const dx = event.x - d.startX;           // change in mouse X
-                    const newWidth = Math.max(30, d.startWidth + dx); // minimum width 30
-                    d.width = newWidth;
-
-                    // Update header rect
-                    d3.select(this.parentNode).select("rect").attr("width", newWidth);
-                    // Update resize handle position
-                    d3.select(this).attr("x", newWidth - 5);
-
-                    // Recalculate x positions for all columns after this one
-                    let x = 0;
-                    columns_data.forEach(col => {
-                        col.x = x;
-                        x += col.width;
+                    dispatch.call("column-resize", this, {
+                        phase: "drag",
+                        columnData: d,
+                        startWidth: d.startWidth,
+                        startX: d.startX,
+                        currentX: event.x,
+                        element: this,  // Pass the DOM element reference
+                        event: event
                     });
-
-                    // Update header positions
-                    headers_g.selectAll("g").attr("transform", col => `translate(${col.x},0)`);
-
-                    // Update body cell positions and widths using D3 selections
-                    body_svg.selectAll(".row").each(function() {
-                        d3.select(this).selectAll(".cell")
-                            .data(columns_data)
-                            .attr("transform", col => `translate(${col.x},0)`)
-                            .select(".cell-bg")
-                            .attr("width", col => col.width);
+                })
+                .on("end", function(event, d) {
+                    dispatch.call("column-resize", this, {
+                        phase: "end",
+                        columnData: d,
+                        element: this,  // Pass the DOM element reference
+                        event: event
                     });
-
-                    // Update body and header SVG width
-                    const totalWidth = d3.sum(columns_data, c => c.width);
-                    body_svg.attr("width", totalWidth);
-                    headers_svg.attr("width", totalWidth);
                 })
             );
 
@@ -802,10 +874,31 @@ function render({ model, el }) {
             // Render cells for new rows only
             renderTableCells(rowsEnter);
 
-            handleFilterConcepts(dispatch, rowsUpdate, body_svg);
+            // handleFilterConcepts(dispatch, rowsUpdate, body_svg);
         }
 
+        let prevalence_dp = default_prevalence_dp;
         function renderTableCells(row) {
+            const dafault_prevalence = 0;
+
+            function getPrevalenceValue(val, col, row_data) {
+                // Define which fields are numeric
+                const numericFields =
+                    ["prevalence", "count_in_cohort", "cohort1_prevalence", "cohort2_prevalence"];
+                const no_dp = ["count_in_cohort"];
+
+                if (val === null || val === undefined) {
+                    if(numericFields.includes(col.field))
+                        val = dafault_prevalence
+                    else val = "";
+                }
+
+                if(numericFields.includes(col.field) && !no_dp.includes(col.field))
+                    val = val.toFixed(prevalence_dp)
+
+                return val;
+            }
+
             // per-row, per-column cells
             columns_data.forEach(col => {
                 const cell = row.append("g")
@@ -827,7 +920,7 @@ function render({ model, el }) {
                         .attr("text-anchor", "start")
                         .text(row_data => {
                             const val = typeof col.field === "function" ? col.field(row_data) : row_data[col.field];
-                            return val !== null ? val : "";
+                            return getPrevalenceValue(val, col, row_data);
                         });
                 } else {
                     switch (col.type) {
@@ -839,7 +932,7 @@ function render({ model, el }) {
                                 .attr("text-anchor", "start")
                                 .text(row_data => {
                                     const val = typeof col.field === "function" ? col.field(row_data) : row_data[col.field];
-                                    return val !== null ? val : "";
+                                    return getPrevalenceValue(val, col, row_data);
                                 });
                             break;
 
@@ -868,7 +961,8 @@ function render({ model, el }) {
                                     .attr("y", outerHeight / 2 + 4)
                                     .attr("font-size", "10px")
                                     .attr("fill", "black")
-                                    .text(row_data.bias !== null ? row_data.bias.toFixed(3) : "");
+                                    .text(row_data.bias !== null ? row_data.bias.toFixed(prevalence_dp) :
+                                        dafault_prevalence.toFixed(prevalence_dp));
                             });
                             break;
 
@@ -904,8 +998,10 @@ function render({ model, el }) {
                                     .attr("x", textX)
                                     .attr("y", row_height / 2 + 4)
                                     .attr("text-anchor", textAnchor)
-                                    .attr("font-size", "10px")
-                                    .text(row_data.difference_in_prevalence !== null ? row_data.difference_in_prevalence.toFixed(3) : "");
+                                    .attr("font-size", "12px")
+                                    .text(row_data.difference_in_prevalence !== null ?
+                                        row_data.difference_in_prevalence.toFixed(prevalence_dp) :
+                                        dafault_prevalence.toFixed(prevalence_dp));
 
                             });
                             break;
@@ -945,8 +1041,6 @@ function render({ model, el }) {
                 handleSort(prevalenceColumn, true); // Skip toggle for initialization
             }
         }
-
-        handleFilterConcepts(dispatch, row, body_svg);
 
         return container;
     }
@@ -1017,10 +1111,14 @@ function render({ model, el }) {
         SearchBox(conceptsTableDispatcher).node());
 
     // draw the prevalence decimal points spinner box
-    // TODO: implement event handler
+    // FIXME: Label is on the wrong side and too close to the spinner
+    // FixMe: Text input accepts invaid imput when typing values in directly
+    // TODO: Handle high numbers of decimal places with scientific notation
+    // TODO: Uncomment this feature once it is working correctly
+    const default_prevalence_dp = 6
     // div_concepts_control_container.appendChild(
     //     SpinnerBox(conceptsTableDispatcher,
-    //         {label: 'Prevalence decimal places: ', element_id: 'concepts_table_prevelance_dp'}).node());
+    //         {label: 'Prevalence decimal places: ', element_id: 'concepts_table_prevelance_dp', value: default_prevalence_dp}).node());
 
     // if there is only one set of concepts, draw a single cohort concepts table
     if(Object.keys(concepts2).length === 0) {
