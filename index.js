@@ -11,6 +11,8 @@ function render({ model, el }) {
     // for testing
     // alert('hello');
 
+    const font_size = '12px';
+
     // DISPATCHERS
 
     // for handling the concepts table
@@ -400,7 +402,7 @@ function render({ model, el }) {
                 .attr('x', 24)
                 .attr('y', 14) // Middle of 18px rect
                 .style('font-family', 'Arial, sans-serif')
-                .style('font-size', '14px')
+                .style('font-size', font_size)
                 .style('fill', 'black')
                 .style('dominant-baseline', 'middle')
                 .text(d => d.label);
@@ -764,7 +766,7 @@ function render({ model, el }) {
             .attr("y", row_height / 2)
             .attr("dy", "0.35em")
             .attr("text-anchor", "middle")
-            .attr("font-size", "12px")
+            .attr("font-size", font_size)
             .attr("fill", "#666")
             .style("cursor", "pointer")
             .style("pointer-events", "all")
@@ -959,7 +961,7 @@ function render({ model, el }) {
                                 g.append("text")
                                     .attr("x", 4)  // small left inset
                                     .attr("y", outerHeight / 2 + 4)
-                                    .attr("font-size", "10px")
+                                    .attr("font-size", font_size)
                                     .attr("fill", "black")
                                     .text(row_data.bias !== null ? row_data.bias.toFixed(prevalence_dp) :
                                         dafault_prevalence.toFixed(prevalence_dp));
@@ -998,11 +1000,10 @@ function render({ model, el }) {
                                     .attr("x", textX)
                                     .attr("y", row_height / 2 + 4)
                                     .attr("text-anchor", textAnchor)
-                                    .attr("font-size", "12px")
+                                    .attr("font-size", font_size)
                                     .text(row_data.difference_in_prevalence !== null ?
                                         row_data.difference_in_prevalence.toFixed(prevalence_dp) :
                                         dafault_prevalence.toFixed(prevalence_dp));
-
                             });
                             break;
 
