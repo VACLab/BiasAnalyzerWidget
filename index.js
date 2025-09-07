@@ -590,6 +590,7 @@ function render({ model, el }) {
         // Function to handle sorting logic
         // TODO: fix jumpy redrawing of the table during sort
         function handleSort(d, skipToggle = false) {
+
             // Toggle sort direction (unless we're initializing)
             if (!skipToggle) {
                 if (d.sortDirection === "asc") {
@@ -617,15 +618,18 @@ function render({ model, el }) {
 
             // Sort the data
             table_data.sort((a, b) => {
+                // console.log('handleSort data = ', d);
+
                 let aVal, bVal;
 
-                if (typeof d.field === "function") {
-                    aVal = d.field(a);
-                    bVal = d.field(b);
-                } else {
+                // if (typeof d.field === "function") {
+                //     aVal = d.field(a);
+                //     bVal = d.field(b);
+                //     console.log('Do I ever come here?');
+                // } else {
                     aVal = a[d.field];
                     bVal = b[d.field];
-                }
+                // }
 
                 // Handle null/undefined values
                 if (aVal === null || aVal === undefined) aVal = "";
@@ -635,6 +639,17 @@ function render({ model, el }) {
                 if (!isNaN(aVal) && !isNaN(bVal) && aVal !== "" && bVal !== "") {
                     aVal = parseFloat(aVal);
                     bVal = parseFloat(bVal);
+                }
+
+                if(d.field === 'difference_in_prevalence'){
+                //     console.log('a = ', a);
+                //     console.log('b = ', b);
+                //     console.log('aVal = ', aVal);
+                //     console.log('bVal = ', bVal);
+                    aVal = Math.abs(aVal);
+                    bVal = Math.abs(bVal);
+                //     console.log('Math.abs(aVal) = ', aVal);
+                //     console.log('Math.abs(bVal) = ', bVal);
                 }
 
                 let comparison = 0;
@@ -921,8 +936,7 @@ function render({ model, el }) {
                         .attr("dy", "0.35em")
                         .attr("text-anchor", "start")
                         .text(row_data => {
-                            const val = typeof col.field === "function" ? col.field(row_data) : row_data[col.field];
-                            return getPrevalenceValue(val, col, row_data);
+                            return getPrevalenceValue(row_data[col.field], col, row_data);
                         });
                 } else {
                     switch (col.type) {
@@ -933,8 +947,7 @@ function render({ model, el }) {
                                 .attr("dy", "0.35em")
                                 .attr("text-anchor", "start")
                                 .text(row_data => {
-                                    const val = typeof col.field === "function" ? col.field(row_data) : row_data[col.field];
-                                    return getPrevalenceValue(val, col, row_data);
+                                    return getPrevalenceValue(row_data[col.field], col, row_data);
                                 });
                             break;
 
@@ -981,6 +994,16 @@ function render({ model, el }) {
                                 innerY = 5;
                                 innerH = outerHeight - 2 * margin;
 
+                                // x = 0 marker
+                                g.append("line")
+                                    .attr("x1", zeroX)
+                                    .attr("y1", 0)
+                                    .attr("x2", zeroX)
+                                    .attr("y2", outerHeight)
+                                    .attr("stroke", "grey")
+                                    .attr("stroke-width", 1)
+                                    .attr("stroke-dasharray", "3,3");
+
                                 // Bar
                                 g.append("rect")
                                     .attr("x", Math.min(zeroX, barScale(row_data.difference_in_prevalence)))
@@ -1002,7 +1025,7 @@ function render({ model, el }) {
                                     .attr("text-anchor", textAnchor)
                                     .attr("font-size", font_size)
                                     .text(row_data.difference_in_prevalence !== null ?
-                                        row_data.difference_in_prevalence.toFixed(prevalence_dp) :
+                                        Math.abs(row_data.difference_in_prevalence.toFixed(prevalence_dp)) :
                                         dafault_prevalence.toFixed(prevalence_dp));
                             });
                             break;
