@@ -761,9 +761,29 @@ function render({ model, el }) {
             throw new Error("ConceptsTable: table_data is empty.");
         }
 
-        // TODO: We may need to change this so that the table fills
-        //       the available width and dynamically resizes the visualization accordingly.
         let columns_data;
+        // if(series2.data === null){
+        //     columns_data = [
+        //         { text: headers_text[1], field: "depth",  x: 0,   width: 40 },
+        //         { text: headers_text[1], field: "concept_code",  x: 40,   width: 150 },
+        //         { text: headers_text[0], field: "concept_name",  x: 190, width: 580 },
+        //         { text: headers_text[2], field: "count_in_cohort", x: 770, width: 150 },
+        //         { text: headers_text[3], field: "prevalence", x: 920, width: 150 }
+        //     ];
+        // }
+        // else{
+        //     columns_data = [
+        //         { text: headers_text[1], field: "depth",  x: 0,   width: 40 },
+        //         { text: headers_text[0], field: "concept_code", x: 40, width: 150, type: 'text' },
+        //         { text: headers_text[1], field: "concept_name", x: 190, width: 340, type: 'text' },
+        //         { text: headers_text[2], field: "cohort2_prevalence", x: 530, width: 150, type: 'text' },
+        //         { text: headers_text[3], field: "difference_in_prevalence", x: 608, width: 240, type: 'compare_bars' },
+        //         { text: headers_text[4], field: "cohort1_prevalence", x: 920, width: 150, type: 'text' }
+        //         // ,{ text: headers_text[5], field: "bias", x: 950, width: 120, type: 'bar' }
+        //     ];
+        // }
+
+
         if(series2.data === null){
             columns_data = [
                 { text: headers_text[1], field: "concept_code",  x: 0,   width: 160 },
