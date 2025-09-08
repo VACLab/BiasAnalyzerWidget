@@ -1213,9 +1213,9 @@ function render({ model, el }) {
             ConceptsTable({data: concepts1, name: cohort1_name}, conceptsTableDispatcher).node());
     }
     else{
-        div_concepts_ctrl_right.appendChild(
-            ToggleSwitch(conceptsTableDispatcher,
-                {label: 'Normalize: ', element_id: 'concepts_table_prevalence_norm'}).node());
+        // div_concepts_ctrl_right.appendChild(
+        //     ToggleSwitch(conceptsTableDispatcher,
+        //         {label: 'Normalize: ', element_id: 'concepts_table_prevalence_norm'}).node());
         // prevalence normalized-actual switch
         default_prevalence_dp = 6
         div_concepts_ctrl_right.appendChild(
