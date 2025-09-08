@@ -16,8 +16,7 @@ function render({ model, el }) {
     // DISPATCHERS
 
     // for handling the concepts table
-    let conceptsTableDispatcher = d3.dispatch('filter', 'sort', 'change-dp', 'column-resize');
-
+    let conceptsTableDispatcher = d3.dispatch('filter', 'sort', 'change-dp', 'column-resize', 'view-pct');
 
     // <editor-fold desc="---------- UTILITY FUNCTIONS ----------"
 
@@ -128,10 +127,11 @@ function render({ model, el }) {
     * draws a search box
     * Parameters:
     *   dispatch: d3.dispatch instance - user input event handler
-    *   element_id: type: string - unique element id
-    *   placeholder: type: string - placeholder for the control value
-    *   label: type: string - label for the control
-    *   width: type: string - the width of the input box in pixels
+    *   options: dictionary
+    *     element_id: type: string - unique element id
+    *     placeholder: type: string - placeholder for the control value
+    *     label: type: string - label for the control
+    *     width: type: string - the width of the input box in pixels
     * Return:
     *   div: DOM div element containing input box
     */
@@ -139,20 +139,21 @@ function render({ model, el }) {
     function SearchBox(dispatch, options = {}) {
         let {
             element_id = '',
-            placeholder = 'Search',
+            placeholder = 'Filter',
             label = '',
             width = 200
         } = options;
 
         verifyDispatch(dispatch, 'Searchbox');
 
-        let div = d3.create("xhtml:div")
-            .attr("xmlns", "http://www.w3.org/1999/xhtml")
-            .style("padding", "10px");
+        let div = d3.create("div")
+            .style("padding", "8px");
 
         let input = div.append('input')
             .attr('type', 'text')
             .attr('placeholder', placeholder.trim())
+            .style('border', '1px solid black')
+            .style('border-radius', '8px')
             .style('width', width + 'px');
 
         element_id = element_id.trim();
@@ -178,20 +179,21 @@ function render({ model, el }) {
     * draws a spinner box
     * Parameters:
     *   dispatch: d3.dispatch instance - user input event handler
-    *   element_id: type: string - unique element id
-    *   placeholder: type: string - placeholder for the control value
-    *   label: type: string - label for the control
-    *   width: type: string - the width of the input box in pixels
+    *   options: dict
+    *     element_id: type: string - unique element id
+    *     value: type: integer - starting-point value
+    *     label: type: string - label for the control
+    *     width: type: integer - the width of the input box in pixels
     * Return:
     *   div: DOM div element containing input box
     */
-    // TODO: Fix problem with label position.
     function SpinnerBox(dispatch, options = {}) {
         let {
             element_id = '',
+            div_id = '',
             value = '6',
             label = '',
-            width = 40
+            width = 32
         } = options;
 
         element_id = element_id.trim();
@@ -201,39 +203,92 @@ function render({ model, el }) {
 
         verifyDispatch(dispatch, 'Spinnerbox');
 
-        let div = d3.create("xhtml:div")
-            .attr("xmlns", "http://www.w3.org/1999/xhtml")
-            .style("padding", "10px");
-
-        let input = div.append('input')
-            .attr('type', 'number')
-            .attr('min', 0)
-            .attr('max', 14)
-            .attr('step', 1)
-            // .attr('placeholder', placeholder)
-            .attr('value', value)
-            .style('width', width + 'px');
-
+        let div = d3.create("div")
+            .style("padding", "8px")
+            .attr('class', div_id);
 
         if (element_id !== '') {
             if (label !== '') {
                 div.append('label')
                     .attr("for", element_id)
-                    .text(label);
+                    .text(label + ' ');
             }
-            input.attr('id', element_id);
         }
 
-        if (value !== '')
-            input.attr('placeholder', value);
-
-        input.on('input', function (event) {
-            dispatch.call('change-dp', this, event.target.value);  // dispatch event
-        });
+        div.append('input')
+            .attr('type', 'number')
+            .attr('min', 0)
+            .attr('max', 14)
+            .attr('step', 1)
+            .attr('value', value)
+            .attr('id', element_id)
+            .attr('class', 'round')
+            .style('width', width + 'px')
+            .style('text-align', 'right')
+            .on('input', function (event) {
+                dispatch.call('change-dp', this, event.target.value);  // dispatch event
+            });
 
         return div;
     }
 
+    /*
+    * draws a toggle switch
+    * Parameters:
+    *   dispatch: d3.dispatch instance - user input event handler
+    *   options: dict
+    *     element_id: type: string - unique element id
+    *     is_on: type: boolean - starting-point value -- False=off, True=on
+    *     label: type: string - label for the control
+    *     width: type: integer - the width of the input box in pixels
+    * Return:
+    *   div: DOM div element containing input box
+    */
+    function ToggleSwitch(dispatch, options = {}) {
+        let {
+            element_id = '',
+            label = '',
+            width = 32,
+            is_on = true
+        } = options;
+
+        element_id = element_id.trim();
+        label = label.trim();
+
+        verifyDispatch(dispatch, 'ToggleSwitch');
+
+        let div = d3.create("div")
+            .style("padding", "8px");
+
+        if (element_id !== '') {
+            if (label !== '') {
+                div.append('label')
+                    .attr("for", element_id)
+                    .text(label + ' ');
+            }
+        }
+
+        // Create the switch container (label) for CSS styling
+        let switchLabel = div.append('label')
+            .attr('class', 'switch');
+
+        // Add the checkbox input
+        switchLabel.append('input')
+            .attr('type', 'checkbox')
+            .attr('id', element_id)
+            .property('checked', is_on)
+            .on('change', function(event) {
+                dispatch.call('view-pct', this, this.checked); // send boolean value
+            });
+
+        // Add the slider span
+        switchLabel.append('span')
+            .attr('class', 'slider round')
+            .style('width', width + 'px') // optional width
+            .style('height', (width / 2) + 'px'); // height proportional to width
+
+        return div;
+    }
 
     // </editor-fold>
 
@@ -255,16 +310,6 @@ function render({ model, el }) {
             } = {}
         } = {}
     ){
-        // validate series1
-        // if (!series1.data) {
-        //     throw new Error("VerticalBarChart requires series1.data.");
-        // }
-        //
-        // // Validate that series1.data is a non-empty array
-        // if (!Array.isArray(series1.data) || series1.data.length === 0) {
-        //     throw new Error("series1.data must be a non-empty array");
-        // }
-
         let svg = d3.create('svg')
             .attr('class', 'barchart')
             .attr('width', width)
@@ -284,7 +329,7 @@ function render({ model, el }) {
             [height - margin.bottom, margin.top])
             .nice();
 
-        // Add X-axis
+        // X-axis
         svg.append('g')
             .attr('transform', `translate(0, ${height - margin.bottom})`)
             .call(d3.axisBottom(xScale))
@@ -298,13 +343,13 @@ function render({ model, el }) {
             .style('text-anchor', 'middle')
             .text(xlabel);
 
-        // Add Y-axis
+        // Y-axis
         svg.append('g')
             .attr('transform', `translate(${margin.left}, 0)`)
             .call(d3.axisLeft(yScale))
             .attr('class', 'axis');
 
-        // y-axis label
+        // Y-axis label
         svg.append('text')
             .attr('class', 'axis-label')
             .attr('transform', 'rotate(-90)')
@@ -349,7 +394,7 @@ function render({ model, el }) {
                 .attr('width', xScale.bandwidth() / 2)
                 .attr('height', d => height - margin.bottom - yScale(d.value));
 
-            // Add labels for series 2 data
+            // series 2 labels
             svg.selectAll('.label2')
                 .data(series2.data)
                 .enter()
@@ -381,7 +426,6 @@ function render({ model, el }) {
                 .attr('class', 'legend')
                 .attr('transform', `translate(${margin.left}, ${height - 20})`);
 
-            // Grouped approach: create a group for each legend item
             const legend_items = legend.selectAll('.legend-item')
                 .data(legend_data)
                 .enter()
@@ -389,7 +433,6 @@ function render({ model, el }) {
                 .attr('class', 'legend-item')
                 .attr('transform', (d, i) => `translate(${i * 120}, 0)`);
 
-            // Add rectangle to each legend item group
             legend_items.append('rect')
                 .attr('x', 0)
                 .attr('y', 0)
@@ -397,10 +440,9 @@ function render({ model, el }) {
                 .attr('height', 18)
                 .attr('fill', d => d.color);
 
-            // Add text to each legend item group
             legend_items.append('text')
                 .attr('x', 24)
-                .attr('y', 14) // Middle of 18px rect
+                .attr('y', 14)
                 .style('font-family', 'Arial, sans-serif')
                 .style('font-size', font_size)
                 .style('fill', 'black')
@@ -585,6 +627,14 @@ function render({ model, el }) {
                     yOffset += row_height; // Use row_height instead of parsing rect height
                 });
             body_svg.attr("height", yOffset);
+        }
+
+        function handleViewAsPercent(value) {
+            const toggle_switch = d3.select("#concepts_table_prevalence_norm");
+            const is_on = toggle_switch.property("checked");
+            d3.select("#concepts_table_prevalence_dp").property("disabled", !is_on);
+            // add/remove class on the wrapper div
+            d3.select("#concepts_table_prevalence_dp_div").classed("disabled", is_on);
         }
 
         // Function to handle sorting logic
@@ -797,6 +847,10 @@ function render({ model, el }) {
 
         dispatch.on("filter", function(search_term) {
             handleFilterConcepts(search_term);
+        })
+
+        dispatch.on("view-pct", function(value) {
+            handleViewAsPercent(value);
         });
 
         dispatch.on("column-resize", function(columnData) {
@@ -1074,7 +1128,7 @@ function render({ model, el }) {
     // <editor-fold desc="---------- PAGE LAYOUT ----------">
 
     // overall container
-    let vis_container = document.createElementNS('http://www.w3.org/1999/xhtml', 'div');
+    let vis_container = document.createElementNS('http://www.w3.org/1999/xhtml', 'div')
     vis_container.setAttribute('class', 'vis-container');
 
     // demographics container row
@@ -1090,20 +1144,36 @@ function render({ model, el }) {
     let div_age = demographics_row.appendChild(document.createElement('div'));
     div_age.setAttribute('class', 'col-container');
 
-    // concepts container row
-    let concepts_row = vis_container.appendChild(document.createElement('div'));
-    concepts_row.setAttribute('class', 'row-container concepts-row');
-    // concepts container
-    let div_concepts_container = concepts_row.appendChild(document.createElement('div'));
-    div_concepts_container.setAttribute('class', 'col-container');
-    // concepts controls container
-    let div_concepts_control_container = div_concepts_container.appendChild(document.createElement('div'));
-    div_concepts_control_container.setAttribute('class', 'row-container');
-    div_concepts_control_container.style.display = 'flex';
-    div_concepts_control_container.style.justifyContent = 'flex-start';
-    // concepts table container
-    let div_concepts_table_container = div_concepts_container.appendChild(document.createElement('div'));
-    div_concepts_table_container.setAttribute('class', 'row-container');
+    // concepts container row -- contains 2 columns
+    let div_concepts = vis_container.appendChild(document.createElement('div'));
+    div_concepts.setAttribute('class', 'row-container concepts-row');
+    // concepts table column - consists of a controls row and a table row
+    let div_concepts_table_container = div_concepts.appendChild(document.createElement('div'));
+    div_concepts_table_container.setAttribute('class', 'col-container');
+    // concepts table detail column - shows the details for a selected column
+    let div_concept_detail_container = div_concepts.appendChild(document.createElement('div'));
+    div_concept_detail_container.setAttribute('class', 'col-container');
+
+    // concepts controls container - has 2 columns
+    let div_concepts_ctrl = div_concepts_table_container.appendChild(document.createElement('div'));
+    div_concepts_ctrl.setAttribute('class', 'row-container');
+    // table controls on the left
+    let div_concepts_ctrl_left = div_concepts_ctrl.appendChild(
+        document.createElement('div'));
+    div_concepts_ctrl_left.setAttribute('class', 'col-container');
+    div_concepts_ctrl_left.style.display = 'flex';
+    div_concepts_ctrl_left.style.justifyContent = 'flex-start';
+    div_concepts_ctrl_left.style.border = 'none';
+    // table controls on the right
+    let div_concepts_ctrl_right = div_concepts_ctrl.appendChild(
+        document.createElement('div'));
+    div_concepts_ctrl_right.setAttribute('class', 'col-container');
+    div_concepts_ctrl_right.style.display = 'flex';
+    div_concepts_ctrl_right.style.justifyContent = 'flex-end';
+    div_concepts_ctrl_right.style.border = 'none';
+    // the container for the concepts table itself
+    let div_concepts_table = div_concepts_table_container.appendChild(document.createElement('div'));
+    div_concepts_table.setAttribute('class', 'row-container');
 
     // </editor-fold>
 
@@ -1131,27 +1201,29 @@ function render({ model, el }) {
             {series2: {data: age_dist2, name: cohort2_name}, dimensions: {xlabel: 'Age'}}).node());
 
     // draw the concepts table search box
-    div_concepts_control_container.appendChild(
+    div_concepts_ctrl_left.appendChild(
         SearchBox(conceptsTableDispatcher).node());
 
-    // draw the prevalence decimal points spinner box
-    // FIXME: Label is on the wrong side and too close to the spinner
-    // FixMe: Text input accepts invaid imput when typing values in directly
-    // TODO: Handle high numbers of decimal places with scientific notation
-    // TODO: Uncomment this feature once it is working correctly
-    const default_prevalence_dp = 6
-    // div_concepts_control_container.appendChild(
-    //     SpinnerBox(conceptsTableDispatcher,
-    //         {label: 'Prevalence decimal places: ', element_id: 'concepts_table_prevelance_dp', value: default_prevalence_dp}).node());
+    let default_prevalence_dp = 0
 
     // if there is only one set of concepts, draw a single cohort concepts table
     if(Object.keys(concepts2).length === 0) {
         // draw the concepts table
-        div_concepts_table_container.appendChild(
+        div_concepts_table.appendChild(
             ConceptsTable({data: concepts1, name: cohort1_name}, conceptsTableDispatcher).node());
     }
     else{
-        div_concepts_table_container.appendChild(
+        div_concepts_ctrl_right.appendChild(
+            ToggleSwitch(conceptsTableDispatcher,
+                {label: 'Normalize: ', element_id: 'concepts_table_prevalence_norm'}).node());
+        // prevalence normalized-actual switch
+        default_prevalence_dp = 6
+        div_concepts_ctrl_right.appendChild(
+            SpinnerBox(conceptsTableDispatcher,
+                {label: 'Decimal places: ', element_id: 'concepts_table_prevalence_dp',
+                    div_id: 'concepts_table_prevalence_dp_div', value: default_prevalence_dp}).node());
+
+        div_concepts_table.appendChild(
             ConceptsTable({data: concepts1, name: cohort1_name}, conceptsTableDispatcher,
                 {series2: {data: concepts2, name: cohort2_name}}).node());
     }

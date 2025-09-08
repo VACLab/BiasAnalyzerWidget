@@ -1,11 +1,8 @@
 /* PAGE LAYOUT */
 
 .vis-container {
-    /*display: flex;*/
-    /*flex-direction: column;*/
     align-items: center;
     width: 100%;
-    /*height: 432px; !* match concepts-row height *!*/
     overflow: visible; /* hide outer vertical scrollbar */
 }
 
@@ -15,7 +12,6 @@
     width: 100%;
     height: auto;
     overflow: hidden;
-    /*margin-bottom: 5px;*/
 }
 
 .col-container {
@@ -81,6 +77,52 @@
     max-height: 370px; /* header height removed */
 }
 
-.full-width {
-    width: 100%;
+/* Container */
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 32px;   /* same width */
+    height: 18px;  /* half the original height */
+}
+
+/* Hide the default checkbox */
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+/* Slider track */
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: grey;
+    transition: .4s;
+    border-radius: 18px; /* round corners = height */
+}
+
+/* Circle knob */
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 14px;     /* knob slightly smaller than track */
+    width: 14px;
+    left: 1px;
+    bottom: 1px;
+    background-color: lightgray;
+    transition: .4s;
+    border-radius: 50%;
+}
+
+/* Checked state */
+input:checked + .slider {
+    background-color: lightgreen;
+}
+
+input:checked + .slider:before {
+    transform: translateX(18px);
 }
