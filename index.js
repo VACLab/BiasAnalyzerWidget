@@ -1,5 +1,6 @@
 import * as d3 from 'https://esm.sh/d3@7';
 import * as Inputs from "https://esm.sh/@observablehq/inputs";
+import * as Plot from "https://esm.sh/@observablehq/plot";
 
 // function initialize({ model }) {
 //     // Set up shared state or event handlers.
@@ -36,22 +37,10 @@ function render({ model, el }) {
         return typeof str === 'string' && str.trim().length === 0;
     }
 
-    // converts keys to readable words by:
-    // 1. replacing the underscore with a space, and
-    // 2. capitalizing the first letter of each word
-    function makeKeysWords (keys, series1_name, series2_name) {
-        // console.log('keys', keys);
-
-        for (let i = 0; i < keys.length; i++) {
-            keys[i] = keys[i].replace("cohort1", series1_name);
-            keys[i] = keys[i].replace("cohort2", series2_name);
-        }
-
-        return keys.map(key => {
-            return key.split('_')
-                .map(part => part.charAt(0).toUpperCase() + part.slice(1))
-                .join(' ');
-        });
+    function toLabel(key){
+        return key.split('_')
+            .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+            .join(' ');
     }
 
     // function safeText(getter) {
@@ -108,12 +97,14 @@ function render({ model, el }) {
 
     // <editor-fold desc="---------- DEFINE DATA ----------">
 
+    var cohort1_stats = model.get('_cohort1_stats');
     var concepts1 = model.get('_concepts1');
     var race_stats1 = model.get('_race_stats1');
     var gender_dist1 = model.get('_gender_dist1');
     var age_dist1 = model.get('_age_dist1');
     var cohort1_name = model.get('_cohort1_name');
 
+    var cohort2_stats = model.get('_cohort2_stats');
     var concepts2 = model.get('_concepts2');
     var race_stats2 = model.get('_race_stats2');
     var gender_dist2 = model.get('_gender_dist2');
@@ -143,26 +134,21 @@ function render({ model, el }) {
         } = options;
 
         verifyDispatch(dispatch, 'Searchbox');
+        label = label.trim();
 
         let container = d3.create("div")
             .style("padding", "4px");
 
         // observable input
-        const input = Inputs.text({ placeholder: "Filter", width: "200px" });
+        const input = Inputs.text({ label: label, placeholder: "Filter", width: "200px" });
+        input.style.marginLeft = '8px';
+
         // The actual input element is inside the wrapper
         const innerInput = input.querySelector("input");
-
-        label = label.trim();
-        if (label !== '') {
-            container.append('label')
-                .text(label)
-                .style('marginRight', '8px'); // spacing between label and input
-        }
-
         // Apply styles to the real input
         innerInput.style.borderRadius = "8px";
         innerInput.style.border = "1px solid #ccc";
-        innerInput.style.padding = "4px 8px"; // optional for nicer spacing
+        // innerInput.style.padding = "4px 8px"; // optional for nicer spacing
         innerInput.style.width = "100%";      // fills the wrapper width
 
         // Dispatch filter event on input
@@ -192,35 +178,31 @@ function render({ model, el }) {
         } = options;
 
         verifyDispatch(dispatch, 'Spinnerbox');
+        label = label.trim();
 
         let container = d3.create("div")
             .style("padding", "4px");
 
         if(value === "")
-            value = 0;
-
-        label = label.trim();
-        if (label !== '') {
-            container.append('label')
-                .text(label)
-                .style('marginRight', '8px'); // spacing between label and input
-        }
+            value = default_prevalence_dp;
 
         // Create number input
         const spinner = Inputs.number({
             value: value,
             min: 0,
             max: 14,
-            step: 1
+            step: 1,
+            label: label
         });
 
         spinner.style.width = width + 'px';
+        spinner.style.marginLeft = '8px';
 
         // Optional: style inner input
         const inner = spinner.querySelector("input");
         inner.style.borderRadius = "8px";
         inner.style.border = "1px solid #ccc";
-        inner.style.padding = "4px 8px"; // optional for nicer spacing
+        // inner.style.padding = "4px 8px"; // optional for nicer spacing
         inner.style.width = "100%";      // fills the wrapper width
         inner.style.text_align = "right";
 
@@ -293,6 +275,89 @@ function render({ model, el }) {
 
     // </editor-fold>
 
+    // <editor-fold desc="---------- SUMMARY STATISTICS FUNCTIONS ----------">
+
+
+    function SummaryStatistics(container, series1, { series2 = { data: null, name: "cohort 2" } } = {}) {
+        // Wrap plain DOM node in a d3 selection
+        const sel = d3.select(container);
+
+        // Main container: vertical layout
+        sel.style('display', 'flex')
+            .style('flex-direction', 'column')
+            .style('gap', '10px'); // space between cohort blocks
+
+        const columns = [
+            ['total_count'],
+            ['earliest_start_date', 'latest_start_date', 'earliest_end_date', 'latest_end_date'],
+            ['min_duration_days', 'max_duration_days', 'avg_duration_days'],
+            ['median_duration', 'stddev_duration']
+        ];
+
+        function drawSeriesSummary(parentSel, cohort) {
+            console.log('cohort = ', cohort);
+
+            // Create a container for this cohort
+            const cohortBlock = parentSel.append('div')
+                .style('display', 'flex')
+                .style('flex-direction', 'column')
+                .style('gap', '12px');
+
+            // Cohort name in bold
+            cohortBlock.append('div')
+                .text(cohort.name)
+                .style('font-weight', 'bold')
+                .style('font-size', '12px');
+
+            // Columns container: horizontal layout
+            const colContainer = cohortBlock.append('div')
+                .style('display', 'flex')
+                .style('gap', '30px');
+
+            // Populate columns
+            columns.forEach(colKeys => {
+                const col = colContainer.append('div')
+                    .style('display', 'flex')
+                    .style('flex-direction', 'column')
+                    .style('gap', '4px');
+
+                colKeys.forEach(key => {
+                    const row = col.append('div')
+                        .style('display', 'flex')
+                        .style('justify-content', 'flex-start')
+                        .style('gap', '8px');
+
+                    // Key
+                    row.append('div')
+                        .text(toLabel(key) + ':')
+                        .style('width', '120px');
+
+                    // Value
+                    row.append('div')
+                        .text(() => {
+                            if (!cohort.data || cohort.data.length === 0) return '—';
+                            const record = cohort.data[0];
+                            const value = record[key];
+                            return value !== undefined ? value : '—';
+                        })
+                        .style('text-align', 'left');
+                });
+            });
+        }
+
+        // Draw first series
+        if (!series2.data || series2.data.length === 0)
+            series1.name = '';
+        drawSeriesSummary(sel, series1);
+
+        // Draw second series below the first if it has data
+        if (series2.data && series2.data.length > 0) {
+            drawSeriesSummary(sel, series2);
+        }
+    }
+
+    // </editor-fold>
+
     // <editor-fold desc="---------- VERTICAL BAR CHART FUNCTIONS ----------">
 
     // all parameters are optional at the function signature level, but we are validating within the function
@@ -307,10 +372,54 @@ function render({ model, el }) {
                 width = 600,
                 height = 400,
                 margin = { top: 40, right: 10, bottom: 60, left: 80 },
-                padding = 0.1
+                padding = 0.1,
+                showPercent = true
             } = {}
         } = {}
     ){
+        // helper: safely coerce to number
+        const toNum = v => (v == null || v === "") ? 0 : +v;
+
+        // helper: normalize explicit proportion-like fields
+        const normalizeProp = p => {
+            if (p == null || p === "" || isNaN(+p)) return null;
+            p = +p;
+            // if user provided 0..100 percentages, convert to fraction
+            if (p > 1) return p / 100;
+            return p;
+        };
+
+        // compute sensible category domain from combined data (union)
+        const combinedData = (series2 && series2.data && series2.data.length)
+            ? series1.data.concat(series2.data)
+            : series1.data;
+
+        const categories = Array.from(new Set(combinedData.map(d => d.category)));
+
+        // compute per-series totals for fallback proportion calculation
+        const sum1 = d3.sum(series1.data, d => toNum(d.value));
+        const sum2 = (series2 && series2.data && series2.data.length)
+            ? d3.sum(series2.data, d => toNum(d.value))
+            : 0;
+
+        // function to get a proportion (0..1) for an item; seriesIndex = 1 or 2
+        function getProportion(d, seriesIndex = 1) {
+            // check common fields
+            let p = null;
+            if (d.proportion != null) p = normalizeProp(d.proportion);
+            else if (d.probability != null) p = normalizeProp(d.probability);
+            else if (d.percent != null) p = normalizeProp(d.percent);
+
+            if (p != null) return p;
+
+            // fallback: compute from value relative to series total
+            const val = toNum(d.value);
+            if (seriesIndex === 1) return sum1 > 0 ? val / sum1 : 0;
+            if (seriesIndex === 2) return sum2 > 0 ? val / sum2 : 0;
+            return 0;
+        }
+
+        // Create svg
         let svg = d3.create('svg')
             .attr('class', 'barchart')
             .attr('width', width)
@@ -318,17 +427,19 @@ function render({ model, el }) {
             .attr('viewBox', `0 0 ${width} ${height}`)
             .attr('preserveAspectRatio', 'xMidYMid meet');
 
-        // Combine data for scales
-        const combinedData = series2.data ? series1.data.concat(series2.data) : series1.data;
-
-        // Set up scales
-        const xScale = d3.scaleBand(series1.data.map(d => d.category),
-            [margin.left, width - margin.right])
+        // X scale
+        const xScale = d3.scaleBand(categories, [margin.left, width - margin.right])
             .padding(padding);
 
-        const yScale = d3.scaleLinear([0, d3.max(combinedData, d => d.value)],
-            [height - margin.bottom, margin.top])
-            .nice();
+        // Y-scale
+        const yMax = showPercent
+          ? d3.max([
+              d3.max(series1.data, d => getProportion(d, 1)),
+              series2 && series2.data ? d3.max(series2.data, d => getProportion(d, 2)) : 0
+            ])
+          : d3.max(combinedData, d => toNum(d.value));
+
+        const yScale = d3.scaleLinear([0, yMax], [height - margin.bottom, margin.top]).nice();
 
         // X-axis
         svg.append('g')
@@ -344,10 +455,14 @@ function render({ model, el }) {
             .style('text-anchor', 'middle')
             .text(xlabel);
 
-        // Y-axis
+        // Y-axis with formatting
+        const yAxis = showPercent
+            ? d3.axisLeft(yScale).tickFormat(d3.format(".0%"))
+            : d3.axisLeft(yScale).tickFormat(d3.format(","));
+
         svg.append('g')
             .attr('transform', `translate(${margin.left}, 0)`)
-            .call(d3.axisLeft(yScale))
+            .call(yAxis)
             .attr('class', 'axis');
 
         // Y-axis label
@@ -359,10 +474,8 @@ function render({ model, el }) {
             .attr('text-anchor', 'middle')
             .text(ylabel);
 
-        if (title === '' && xlabel !== ''){
-            title = xlabel + ' Distribution';
-        }
-
+        // Title
+        if (title === '' && xlabel !== '') title = xlabel + ' Distribution';
         svg.append('text')
             .attr('class', 'chart-title')
             .attr('text-anchor', 'middle')
@@ -370,54 +483,76 @@ function render({ model, el }) {
             .attr('y', margin.top / 2)
             .text(title);
 
-        // console.log(xScale.bandwidth());
+        // Render bars & labels
+        const hasSecond = series2 && series2.data && series2.data.length > 0;
+        const bw = xScale.bandwidth();
+        const half = bw / 2;
 
-        // series 1 bars
+        // Series 1 bars
         svg.selectAll('.bar1')
             .data(series1.data)
             .enter()
             .append('rect')
             .attr('class', 'bar1')
-            .attr('x', d => series2.data && series2.data.length > 0 ? xScale(d.category) : xScale(d.category))
-            .attr('y', d => yScale(d.value))
-            .attr('width', series2.data && series2.data.length > 0 ? xScale.bandwidth() / 2 : xScale.bandwidth())
-            .attr('height', d => height - margin.bottom - yScale(d.value));
+            .attr('x', d => xScale(d.category))
+            .attr('y', d => {
+                const val = showPercent ? getProportion(d, 1) : toNum(d.value);
+                return yScale(val);
+            })
+            .attr('width', hasSecond ? half : bw)
+            .attr('height', d => {
+                const val = showPercent ? getProportion(d, 1) : toNum(d.value);
+                return height - margin.bottom - yScale(val);
+            });
 
-        if (series2.data && series2.data.length > 0) {
-            // series 2 data bars
+        if (hasSecond) {
+            // Series 2 bars
             svg.selectAll('.bar2')
                 .data(series2.data)
                 .enter()
                 .append('rect')
                 .attr('class', 'bar2')
-                .attr('x', d => xScale(d.category) + xScale.bandwidth() / 2)
-                .attr('y', d => yScale(d.value))
-                .attr('width', xScale.bandwidth() / 2)
-                .attr('height', d => height - margin.bottom - yScale(d.value));
+                .attr('x', d => xScale(d.category) + half)
+                .attr('y', d => {
+                    const val = showPercent ? getProportion(d, 2) : toNum(d.value);
+                    return yScale(val);
+                })
+                .attr('width', half)
+                .attr('height', d => {
+                    const val = showPercent ? getProportion(d, 2) : toNum(d.value);
+                    return height - margin.bottom - yScale(val);
+                });
 
-            // series 2 labels
+            // Series 2 labels (centered on its half-bar)
             svg.selectAll('.label2')
                 .data(series2.data)
                 .enter()
                 .append('text')
                 .attr('class', 'label2')
-                .attr('x', d => xScale(d.category) + xScale.bandwidth() / 2 + xScale.bandwidth() / 4) // CHANGED: Fixed positioning
-                .attr('y', d => yScale(d.value) - 5)
+                .attr('x', d => xScale(d.category) + half + half / 2)
+                .attr('y', d => {
+                    const val = showPercent ? getProportion(d, 2) : toNum(d.value);
+                    return yScale(val) - 5;
+                })
                 .attr('text-anchor', 'middle')
-                .text(d => d.value);
+                .text(d => showPercent ? d3.format(".0%")(getProportion(d, 2)) : d3.format(",")(toNum(d.value)));
 
-            // labels for series 1 data if there are 2 datasets
+            // Series 1 labels (left half)
             svg.selectAll('.label1')
                 .data(series1.data)
                 .enter()
                 .append('text')
                 .attr('class', 'label1')
-                .attr('x', d => xScale(d.category) + xScale.bandwidth() / 4) // CHANGED: Fixed positioning
-                .attr('y', d => yScale(d.value) - 5)
+                .attr('x', d => xScale(d.category) + half / 2)
+                .attr('y', d => {
+                    const val = showPercent ? getProportion(d, 1) : toNum(d.value);
+                    return yScale(val) - 5;
+                })
                 .attr('text-anchor', 'middle')
-                .text(d => d.value);
+                .text(d => showPercent ? d3.format(".0%")(getProportion(d, 1)) : d3.format(",")(toNum(d.value)));
 
-            // only show legend if there are 2 datasets
+            // Legend (simple)
+            const legendFontSize = 12;
             const legend_data = [
                 { label: series1.name, color: 'steelblue' },
                 { label: series2.name, color: 'orange' }
@@ -432,7 +567,7 @@ function render({ model, el }) {
                 .enter()
                 .append('g')
                 .attr('class', 'legend-item')
-                .attr('transform', (d, i) => `translate(${i * 120}, 0)`);
+                .attr('transform', (d, i) => `translate(${i * 140}, 0)`);
 
             legend_items.append('rect')
                 .attr('x', 0)
@@ -445,22 +580,24 @@ function render({ model, el }) {
                 .attr('x', 24)
                 .attr('y', 14)
                 .style('font-family', 'Arial, sans-serif')
-                .style('font-size', font_size)
+                .style('font-size', legendFontSize)
                 .style('fill', 'black')
                 .style('dominant-baseline', 'middle')
                 .text(d => d.label);
-        }
-        else{
-            // labels for series 1 data if there is 1 dataset
+        } else {
+            // Single-series labels
             svg.selectAll('.label1')
                 .data(series1.data)
                 .enter()
                 .append('text')
                 .attr('class', 'label1')
-                .attr('x', d => xScale(d.category) + xScale.bandwidth() / 2 + 5)
-                .attr('y', d => yScale(d.value) - 5)
+                .attr('x', d => xScale(d.category) + bw / 2)
+                .attr('y', d => {
+                    const val = showPercent ? getProportion(d, 1) : toNum(d.value);
+                    return yScale(val) - 5;
+                })
                 .attr('text-anchor', 'middle')
-                .text(d => d.value);
+                .text(d => showPercent ? d3.format(".0%")(getProportion(d, 1)) : d3.format(",")(toNum(d.value)));
         }
 
         return svg;
@@ -748,6 +885,22 @@ function render({ model, el }) {
             .style("font-family", "sans-serif");
 
         // === HEADERS ===
+
+        // converts keys to readable words by:
+        // 1. replacing the underscore with a space, and
+        // 2. capitalizing the first letter of each word
+        function makeKeysWords (keys, series1_name, series2_name) {
+            // console.log('keys', keys);
+
+            for (let i = 0; i < keys.length; i++) {
+                keys[i] = keys[i].replace("cohort1", series1_name);
+                keys[i] = keys[i].replace("cohort2", series2_name);
+            }
+
+            return keys.map(key => {
+                return toLabel(key);
+            });
+        }
 
         const headers_text = makeKeysWords(Object.keys(table_data[0]), series1.name, series2.name);
         if (!table_data.length) {
@@ -1139,6 +1292,16 @@ function render({ model, el }) {
     let vis_container = document.createElementNS('http://www.w3.org/1999/xhtml', 'div')
     vis_container.setAttribute('class', 'vis-container');
 
+    // TODO: Add study cohort stats
+    // summary container row
+    let div_cohort_summary = vis_container.appendChild(document.createElement('div'));
+    div_cohort_summary.setAttribute('class', 'row-container');
+    div_cohort_summary.style.display = 'flex';
+    div_cohort_summary.style.gap = '32px'; // space between columns
+    div_cohort_summary.style.justifyContent = 'flex-start';
+    div_cohort_summary.style.border = '1px solid #ccc'
+    div_cohort_summary.style.padding = '8px';
+
     // demographics container row
     let demographics_row = vis_container.appendChild(document.createElement('div'));
     demographics_row.setAttribute('class', 'row-container');
@@ -1162,23 +1325,26 @@ function render({ model, el }) {
     let div_concept_detail_container = div_concepts.appendChild(document.createElement('div'));
     div_concept_detail_container.setAttribute('class', 'col-container');
 
-    // concepts controls container - has 2 columns
+    // concepts controls container
     let div_concepts_ctrl = div_concepts_table_container.appendChild(document.createElement('div'));
     div_concepts_ctrl.setAttribute('class', 'row-container');
+    div_concepts_ctrl.style.display = 'flex';
+    div_concepts_ctrl.style.justifyContent = 'flex-start';
+    div_concepts_ctrl.style.border = 'none';
     // table controls on the left
-    let div_concepts_ctrl_left = div_concepts_ctrl.appendChild(
-        document.createElement('div'));
-    div_concepts_ctrl_left.setAttribute('class', 'col-container');
-    div_concepts_ctrl_left.style.display = 'flex';
-    div_concepts_ctrl_left.style.justifyContent = 'flex-start';
-    div_concepts_ctrl_left.style.border = 'none';
-    // table controls on the right
-    let div_concepts_ctrl_right = div_concepts_ctrl.appendChild(
-        document.createElement('div'));
-    div_concepts_ctrl_right.setAttribute('class', 'col-container');
-    div_concepts_ctrl_right.style.display = 'flex';
-    div_concepts_ctrl_right.style.justifyContent = 'flex-end';
-    div_concepts_ctrl_right.style.border = 'none';
+    // let div_concepts_ctrl_left = div_concepts_ctrl.appendChild(
+    //     document.createElement('div'));
+    // div_concepts_ctrl_left.setAttribute('class', 'col-container');
+    // div_concepts_ctrl_left.style.display = 'flex';
+    // div_concepts_ctrl_left.style.justifyContent = 'flex-start';
+    // div_concepts_ctrl_left.style.border = 'none';
+    // // table controls on the right
+    // let div_concepts_ctrl_right = div_concepts_ctrl.appendChild(
+    //     document.createElement('div'));
+    // div_concepts_ctrl_right.setAttribute('class', 'col-container');
+    // div_concepts_ctrl_right.style.display = 'flex';
+    // div_concepts_ctrl_right.style.justifyContent = 'flex-end';
+    // div_concepts_ctrl_right.style.border = 'none';
     // the container for the concepts table itself
     let div_concepts_table = div_concepts_table_container.appendChild(document.createElement('div'));
     div_concepts_table.setAttribute('class', 'row-container');
@@ -1186,6 +1352,10 @@ function render({ model, el }) {
     // </editor-fold>
 
     // <editor-fold desc="---------- INSERT THE VISUALIZATIONS ----------">
+
+    // summary statistics
+    SummaryStatistics(div_cohort_summary, {data: cohort1_stats, name: cohort1_name},
+        {series2: {data: cohort2_stats, name: cohort2_name}});
 
     // draw the gender barchart
     // console.log('gender_dist1', JSON.stringify(gender_dist1, null, 2));
@@ -1209,13 +1379,16 @@ function render({ model, el }) {
             {series2: {data: age_dist2, name: cohort2_name}, dimensions: {xlabel: 'Age'}}).node());
 
     // draw the concepts table search box
-    div_concepts_ctrl_left.appendChild(
+    div_concepts_ctrl.appendChild(
         SearchBox(conceptsTableDispatcher, {label: 'Filter by concept code or name'}).node());
 
-    let default_prevalence_dp = 0
+    let default_prevalence_dp = 6;
+    div_concepts_ctrl.appendChild(
+        SpinnerBox(conceptsTableDispatcher, {label: 'D.P.', value: default_prevalence_dp}).node());
 
     // if there is only one set of concepts, draw a single cohort concepts table
     if(Object.keys(concepts2).length === 0) {
+
         // draw the concepts table
         div_concepts_table.appendChild(
             ConceptsTable({data: concepts1, name: cohort1_name}, conceptsTableDispatcher).node());
@@ -1225,9 +1398,6 @@ function render({ model, el }) {
         // div_concepts_ctrl_right.appendChild(
         //     ToggleSwitch(conceptsTableDispatcher, {label: 'Normalize'}).node());
         // prevalence normalized-actual switch
-        default_prevalence_dp = 6
-        div_concepts_ctrl_right.appendChild(
-            SpinnerBox(conceptsTableDispatcher, {label: 'Decimal places', value: default_prevalence_dp}).node());
 
         div_concepts_table.appendChild(
             ConceptsTable({data: concepts1, name: cohort1_name}, conceptsTableDispatcher,
