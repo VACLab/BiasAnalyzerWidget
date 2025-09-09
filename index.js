@@ -1,4 +1,5 @@
 import * as d3 from 'https://esm.sh/d3@7';
+import * as Inputs from "https://esm.sh/@observablehq/inputs";
 
 // function initialize({ model }) {
 //     // Set up shared state or event handlers.
@@ -128,17 +129,14 @@ function render({ model, el }) {
     * Parameters:
     *   dispatch: d3.dispatch instance - user input event handler
     *   options: dictionary
-    *     element_id: type: string - unique element id
     *     placeholder: type: string - placeholder for the control value
     *     label: type: string - label for the control
     *     width: type: string - the width of the input box in pixels
     * Return:
-    *   div: DOM div element containing input box
+    *   container: DOM div element containing input box
     */
-    // TODO: Test this function to see if the label aspect works.
     function SearchBox(dispatch, options = {}) {
         let {
-            element_id = '',
             placeholder = 'Filter',
             label = '',
             width = 200
@@ -146,33 +144,33 @@ function render({ model, el }) {
 
         verifyDispatch(dispatch, 'Searchbox');
 
-        let div = d3.create("div")
-            .style("padding", "8px");
+        let container = d3.create("div")
+            .style("padding", "4px");
 
-        let input = div.append('input')
-            .attr('type', 'text')
-            .attr('placeholder', placeholder.trim())
-            .style('border', '1px solid black')
-            .style('border-radius', '8px')
-            .style('width', width + 'px');
+        // observable input
+        const input = Inputs.text({ placeholder: "Filter", width: "200px" });
+        // The actual input element is inside the wrapper
+        const innerInput = input.querySelector("input");
 
-        element_id = element_id.trim();
         label = label.trim();
-
-        if (element_id !== "") {
-            if (label !== "") {
-                div.append("label")
-                    .attr("for", element_id)
-                    .text(label);
-            }
-            input.attr('id', element_id);
+        if (label !== '') {
+            container.append('label')
+                .text(label)
+                .style('marginRight', '8px'); // spacing between label and input
         }
 
-        input.on('input', function (event) {
-            dispatch.call('filter', this, event.target.value);  // dispatch filter event
-        });
+        // Apply styles to the real input
+        innerInput.style.borderRadius = "8px";
+        innerInput.style.border = "1px solid #ccc";
+        innerInput.style.padding = "4px 8px"; // optional for nicer spacing
+        innerInput.style.width = "100%";      // fills the wrapper width
 
-        return div;
+        // Dispatch filter event on input
+        input.addEventListener("input", e => dispatch.call("filter", this, e.target.value));
+
+        container.node().appendChild(input);
+
+        return container;
     }
 
     /*
@@ -180,56 +178,59 @@ function render({ model, el }) {
     * Parameters:
     *   dispatch: d3.dispatch instance - user input event handler
     *   options: dict
-    *     element_id: type: string - unique element id
     *     value: type: integer - starting-point value
     *     label: type: string - label for the control
     *     width: type: integer - the width of the input box in pixels
     * Return:
-    *   div: DOM div element containing input box
+    *   container: DOM div element containing input box
     */
     function SpinnerBox(dispatch, options = {}) {
         let {
-            element_id = '',
-            div_id = '',
             value = '6',
             label = '',
             width = 32
         } = options;
 
-        element_id = element_id.trim();
-        if(value === "")
-            value = 0;
-        label = label.trim();
-
         verifyDispatch(dispatch, 'Spinnerbox');
 
-        let div = d3.create("div")
-            .style("padding", "8px")
-            .attr('class', div_id);
+        let container = d3.create("div")
+            .style("padding", "4px");
 
-        if (element_id !== '') {
-            if (label !== '') {
-                div.append('label')
-                    .attr("for", element_id)
-                    .text(label + ' ');
-            }
+        if(value === "")
+            value = 0;
+
+        label = label.trim();
+        if (label !== '') {
+            container.append('label')
+                .text(label)
+                .style('marginRight', '8px'); // spacing between label and input
         }
 
-        div.append('input')
-            .attr('type', 'number')
-            .attr('min', 0)
-            .attr('max', 14)
-            .attr('step', 1)
-            .attr('value', value)
-            .attr('id', element_id)
-            .attr('class', 'round')
-            .style('width', width + 'px')
-            .style('text-align', 'right')
-            .on('input', function (event) {
-                dispatch.call('change-dp', this, event.target.value);  // dispatch event
-            });
+        // Create number input
+        const spinner = Inputs.number({
+            value: value,
+            min: 0,
+            max: 14,
+            step: 1
+        });
 
-        return div;
+        spinner.style.width = width + 'px';
+
+        // Optional: style inner input
+        const inner = spinner.querySelector("input");
+        inner.style.borderRadius = "8px";
+        inner.style.border = "1px solid #ccc";
+        inner.style.padding = "4px 8px"; // optional for nicer spacing
+        inner.style.width = "100%";      // fills the wrapper width
+        inner.style.text_align = "right";
+
+        // Dispatch filter event on input
+        spinner.addEventListener("input", e => dispatch.call("change-dp", this, e.target.value));
+        // Append input to container
+
+        container.node().appendChild(spinner);
+
+        return container;
     }
 
     /*
@@ -629,14 +630,6 @@ function render({ model, el }) {
             body_svg.attr("height", yOffset);
         }
 
-        function handleViewAsPercent(value) {
-            const toggle_switch = d3.select("#concepts_table_prevalence_norm");
-            const is_on = toggle_switch.property("checked");
-            d3.select("#concepts_table_prevalence_dp").property("disabled", !is_on);
-            // add/remove class on the wrapper div
-            d3.select("#concepts_table_prevalence_dp_div").classed("disabled", is_on);
-        }
-
         // Function to handle sorting logic
         // TODO: fix jumpy redrawing of the table during sort
         function handleSort(d, skipToggle = false) {
@@ -869,10 +862,6 @@ function render({ model, el }) {
             handleFilterConcepts(search_term);
         })
 
-        dispatch.on("view-pct", function(value) {
-            handleViewAsPercent(value);
-        });
-
         dispatch.on("column-resize", function(columnData) {
             handleColumnResize(columnData);
         });
@@ -965,7 +954,6 @@ function render({ model, el }) {
             // Render cells for new rows only
             renderTableCells(rowsEnter);
 
-            // handleFilterConcepts(dispatch, rowsUpdate, body_svg);
         }
 
         let prevalence_dp = default_prevalence_dp;
@@ -1222,7 +1210,7 @@ function render({ model, el }) {
 
     // draw the concepts table search box
     div_concepts_ctrl_left.appendChild(
-        SearchBox(conceptsTableDispatcher).node());
+        SearchBox(conceptsTableDispatcher, {label: 'Filter by concept code or name'}).node());
 
     let default_prevalence_dp = 0
 
@@ -1233,15 +1221,13 @@ function render({ model, el }) {
             ConceptsTable({data: concepts1, name: cohort1_name}, conceptsTableDispatcher).node());
     }
     else{
+        // FIXME: fix the toggleswitch, then uncomment it
         // div_concepts_ctrl_right.appendChild(
-        //     ToggleSwitch(conceptsTableDispatcher,
-        //         {label: 'Normalize: ', element_id: 'concepts_table_prevalence_norm'}).node());
+        //     ToggleSwitch(conceptsTableDispatcher, {label: 'Normalize'}).node());
         // prevalence normalized-actual switch
         default_prevalence_dp = 6
         div_concepts_ctrl_right.appendChild(
-            SpinnerBox(conceptsTableDispatcher,
-                {label: 'Decimal places: ', element_id: 'concepts_table_prevalence_dp',
-                    div_id: 'concepts_table_prevalence_dp_div', value: default_prevalence_dp}).node());
+            SpinnerBox(conceptsTableDispatcher, {label: 'Decimal places', value: default_prevalence_dp}).node());
 
         div_concepts_table.appendChild(
             ConceptsTable({data: concepts1, name: cohort1_name}, conceptsTableDispatcher,
