@@ -45,11 +45,13 @@ class CohortWidget(anywidget.AnyWidget):
         self._cohort2_name = cohort2_name
 
         # Store developer parameters in attributes
+        self._cohort1_stats = kwargs.get('cohort1_stats')
         self._concepts1 = kwargs.get('concepts1')
         self._race_stats1 = kwargs.get('race_stats1')
         self._gender_dist1 = kwargs.get('gender_dist1')
         self._age_dist1 = kwargs.get('age_dist1')
 
+        self._cohort2_stats = kwargs.get('cohort2_stats')
         self._concepts2 = kwargs.get('concepts2')
         self._race_stats2 = kwargs.get('race_stats2')
         self._gender_dist2 = kwargs.get('gender_dist2')
@@ -80,26 +82,35 @@ class CohortWidget(anywidget.AnyWidget):
     def init_widget(self):
         # The reason for converting to df is to do a little bit of data manipulation.
         if not self.is_json_mode:
-            df_concepts1 = self.create_dataframe(self._cohort1.get_concept_stats()['condition_occurrence'])
+            df_cohort1_stats = self.create_dataframe(self._cohort1.get_stats())
+            # get_concept_stats(concept_type='condition_occurrence', filter_count=0, vocab=None,
+            # include_hierarchy=False)
+            df_concepts1 = self.create_dataframe(self._cohort1.get_concept_stats(
+                concept_type='condition_occurrence', include_hierarchy=True))
             df_race_stats1 = self.create_dataframe(self._cohort1.get_stats('race'))
             df_gender_dist1 = self.create_dataframe(self._cohort1.get_distributions('gender'))
             df_age_dist1 = self.create_dataframe(self._cohort1.get_distributions('age'))
             if self._cohort2 is not None:
-                df_concepts2 = self.create_dataframe(self._cohort2.get_concept_stats()['condition_occurrence'])
+                df_cohort2_stats = self.create_dataframe(self._cohort2.get_stats())
+                df_concepts2 = self.create_dataframe(self._cohort2.get_concept_stats(
+                    concept_type='condition_occurrence', include_hierarchy=True))
                 df_race_stats2 = self.create_dataframe(self._cohort2.get_stats('race'))
                 df_gender_dist2 = self.create_dataframe(self._cohort2.get_distributions('gender'))
                 df_age_dist2 = self.create_dataframe(self._cohort2.get_distributions('age'))
             else:
+                df_cohort2_stats = self.create_dataframe(None)
                 df_concepts2 = self.create_dataframe(None)
                 df_race_stats2 = self.create_dataframe(None)
                 df_gender_dist2 = self.create_dataframe(None)
                 df_age_dist2 = self.create_dataframe(None)
         else:
+            df_cohort1_stats = self.create_dataframe(self._cohort1_stats)
             df_concepts1 = self.create_dataframe(self._concepts1)
             df_race_stats1 = self.create_dataframe(self._race_stats1)
             df_gender_dist1 = self.create_dataframe(self._gender_dist1)
             df_age_dist1 = self.create_dataframe(self._age_dist1)
 
+            df_cohort2_stats = self.create_dataframe(self._cohort2_stats)
             df_concepts2 = self.create_dataframe(self._concepts2)
             df_race_stats2 = self.create_dataframe(self._race_stats2)
             df_gender_dist2 = self.create_dataframe(self._gender_dist2)
@@ -128,6 +139,8 @@ class CohortWidget(anywidget.AnyWidget):
 
         # Give data to traitlets as lists of dictionaries.
 
+        self.create_trait('_cohort1_stats', traitlets.List(traitlets.Dict()),
+                          df_cohort1_stats.to_dict(orient='records'))
         self.create_trait('_concepts1', traitlets.List(traitlets.Dict()),
                           df_concepts1.to_dict(orient='records'))
         self.create_trait('_race_stats1', traitlets.List(traitlets.Dict()),
@@ -138,6 +151,8 @@ class CohortWidget(anywidget.AnyWidget):
                           df_age_dist1.to_dict(orient='records'))
         self.create_trait('_cohort1_name', traitlets.Unicode(), self._cohort1_name)
 
+        self.create_trait('_cohort2_stats', traitlets.List(traitlets.Dict()),
+                          df_cohort2_stats.to_dict(orient='records'))
         self.create_trait('_concepts2', traitlets.List(traitlets.Dict()),
                           df_concepts2.to_dict(orient='records'))
         self.create_trait('_race_stats2', traitlets.List(traitlets.Dict()),
