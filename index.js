@@ -15,8 +15,6 @@ function render({ model, el }) {
 
     const font_size = '12px';
 
-    // DISPATCHERS
-
     // for handling the concepts table
     let conceptsTableDispatcher = d3.dispatch('filter', 'sort', 'change-dp', 'column-resize', 'view-pct');
 
@@ -172,9 +170,12 @@ function render({ model, el }) {
     */
     function SpinnerBox(dispatch, options = {}) {
         let {
-            value = '6',
+            value = default_prevalence_dp,
             label = '',
-            width = 32
+            width = 45,
+            min = 0,
+            max = 14,
+            step = 1
         } = options;
 
         verifyDispatch(dispatch, 'Spinnerbox');
@@ -183,16 +184,14 @@ function render({ model, el }) {
         let container = d3.create("div")
             .style("padding", "4px");
 
-        if(value === "")
-            value = default_prevalence_dp;
-
         // Create number input
         const spinner = Inputs.number({
             value: value,
-            min: 0,
-            max: 14,
-            step: 1,
+            min: min,
+            max: max,
+            step: step,
             label: label
+            // width: width
         });
 
         spinner.style.width = width + 'px';
@@ -277,7 +276,6 @@ function render({ model, el }) {
 
     // <editor-fold desc="---------- SUMMARY STATISTICS FUNCTIONS ----------">
 
-
     function SummaryStatistics(container, series1, { series2 = { data: null, name: "cohort 2" } } = {}) {
         // Wrap plain DOM node in a d3 selection
         const sel = d3.select(container);
@@ -295,8 +293,6 @@ function render({ model, el }) {
         ];
 
         function drawSeriesSummary(parentSel, cohort) {
-            console.log('cohort = ', cohort);
-
             // Create a container for this cohort
             const cohortBlock = parentSel.append('div')
                 .style('display', 'flex')
@@ -373,7 +369,7 @@ function render({ model, el }) {
                 height = 400,
                 margin = { top: 40, right: 10, bottom: 60, left: 80 },
                 padding = 0.1,
-                showPercent = true
+                showPercent: show_percent = true
             } = {}
         } = {}
     ){
@@ -432,7 +428,7 @@ function render({ model, el }) {
             .padding(padding);
 
         // Y-scale
-        const yMax = showPercent
+        const yMax = show_percent
           ? d3.max([
               d3.max(series1.data, d => getProportion(d, 1)),
               series2 && series2.data ? d3.max(series2.data, d => getProportion(d, 2)) : 0
@@ -440,6 +436,10 @@ function render({ model, el }) {
           : d3.max(combinedData, d => toNum(d.value));
 
         const yScale = d3.scaleLinear([0, yMax], [height - margin.bottom, margin.top]).nice();
+
+        const color = d3.scaleOrdinal()
+            .domain([series1.name, series2.name]) // the series labels
+            .range(d3.schemePaired.slice(0, 2));
 
         // X-axis
         svg.append('g')
@@ -456,7 +456,7 @@ function render({ model, el }) {
             .text(xlabel);
 
         // Y-axis with formatting
-        const yAxis = showPercent
+        const yAxis = show_percent
             ? d3.axisLeft(yScale).tickFormat(d3.format(".0%"))
             : d3.axisLeft(yScale).tickFormat(d3.format(","));
 
@@ -496,14 +496,15 @@ function render({ model, el }) {
             .attr('class', 'bar1')
             .attr('x', d => xScale(d.category))
             .attr('y', d => {
-                const val = showPercent ? getProportion(d, 1) : toNum(d.value);
+                const val = show_percent ? getProportion(d, 1) : toNum(d.value);
                 return yScale(val);
             })
             .attr('width', hasSecond ? half : bw)
             .attr('height', d => {
-                const val = showPercent ? getProportion(d, 1) : toNum(d.value);
+                const val = show_percent ? getProportion(d, 1) : toNum(d.value);
                 return height - margin.bottom - yScale(val);
-            });
+            })
+            .attr('fill', d => color(series1.name));
 
         if (hasSecond) {
             // Series 2 bars
@@ -514,14 +515,15 @@ function render({ model, el }) {
                 .attr('class', 'bar2')
                 .attr('x', d => xScale(d.category) + half)
                 .attr('y', d => {
-                    const val = showPercent ? getProportion(d, 2) : toNum(d.value);
+                    const val = show_percent ? getProportion(d, 2) : toNum(d.value);
                     return yScale(val);
                 })
                 .attr('width', half)
                 .attr('height', d => {
-                    const val = showPercent ? getProportion(d, 2) : toNum(d.value);
+                    const val = show_percent ? getProportion(d, 2) : toNum(d.value);
                     return height - margin.bottom - yScale(val);
-                });
+                })
+                .attr('fill', d => color(series2.name));
 
             // Series 2 labels (centered on its half-bar)
             svg.selectAll('.label2')
@@ -531,11 +533,11 @@ function render({ model, el }) {
                 .attr('class', 'label2')
                 .attr('x', d => xScale(d.category) + half + half / 2)
                 .attr('y', d => {
-                    const val = showPercent ? getProportion(d, 2) : toNum(d.value);
+                    const val = show_percent ? getProportion(d, 2) : toNum(d.value);
                     return yScale(val) - 5;
                 })
                 .attr('text-anchor', 'middle')
-                .text(d => showPercent ? d3.format(".0%")(getProportion(d, 2)) : d3.format(",")(toNum(d.value)));
+                .text(d => show_percent ? d3.format(".0%")(getProportion(d, 2)) : d3.format(",")(toNum(d.value)));
 
             // Series 1 labels (left half)
             svg.selectAll('.label1')
@@ -545,17 +547,17 @@ function render({ model, el }) {
                 .attr('class', 'label1')
                 .attr('x', d => xScale(d.category) + half / 2)
                 .attr('y', d => {
-                    const val = showPercent ? getProportion(d, 1) : toNum(d.value);
+                    const val = show_percent ? getProportion(d, 1) : toNum(d.value);
                     return yScale(val) - 5;
                 })
                 .attr('text-anchor', 'middle')
-                .text(d => showPercent ? d3.format(".0%")(getProportion(d, 1)) : d3.format(",")(toNum(d.value)));
+                .text(d => show_percent ? d3.format(".0%")(getProportion(d, 1)) : d3.format(",")(toNum(d.value)));
 
             // Legend (simple)
             const legendFontSize = 12;
             const legend_data = [
-                { label: series1.name, color: 'steelblue' },
-                { label: series2.name, color: 'orange' }
+                { label: series1.name, color: color(series1.name) },
+                { label: series2.name, color: color(series2.name) }
             ];
 
             const legend = svg.append('g')
@@ -567,7 +569,7 @@ function render({ model, el }) {
                 .enter()
                 .append('g')
                 .attr('class', 'legend-item')
-                .attr('transform', (d, i) => `translate(${i * 140}, 0)`);
+                .attr('transform', (d, i) => `translate(${i * 100}, 0)`);
 
             legend_items.append('rect')
                 .attr('x', 0)
@@ -593,11 +595,11 @@ function render({ model, el }) {
                 .attr('class', 'label1')
                 .attr('x', d => xScale(d.category) + bw / 2)
                 .attr('y', d => {
-                    const val = showPercent ? getProportion(d, 1) : toNum(d.value);
+                    const val = show_percent ? getProportion(d, 1) : toNum(d.value);
                     return yScale(val) - 5;
                 })
                 .attr('text-anchor', 'middle')
-                .text(d => showPercent ? d3.format(".0%")(getProportion(d, 1)) : d3.format(",")(toNum(d.value)));
+                .text(d => show_percent ? d3.format(".0%")(getProportion(d, 1)) : d3.format(",")(toNum(d.value)));
         }
 
         return svg;
@@ -967,6 +969,10 @@ function render({ model, el }) {
             .append("g")
             .attr("transform", d => `translate(${d.x},0)`);
 
+        const color = d3.scaleOrdinal()
+            .domain([series1.name, series2?.name]) // the series labels
+            .range(d3.schemePaired);
+
         header_g.append("rect")
             .attr("width", d => d.width)
             .attr("height", row_height)
@@ -1106,7 +1112,6 @@ function render({ model, el }) {
 
             // Render cells for new rows only
             renderTableCells(rowsEnter);
-
         }
 
         let prevalence_dp = default_prevalence_dp;
@@ -1122,7 +1127,7 @@ function render({ model, el }) {
                 if (val === null || val === undefined) {
                     if(numericFields.includes(col.field))
                         val = dafault_prevalence
-                    else val = "";
+                    else val = 0;
                 }
 
                 if(numericFields.includes(col.field) && !no_dp.includes(col.field))
@@ -1225,7 +1230,7 @@ function render({ model, el }) {
                                     .attr("y", innerY)
                                     .attr("width", Math.abs(barScale(row_data.difference_in_prevalence) - zeroX))
                                     .attr("height", innerH)
-                                    .attr("fill", row_data.difference_in_prevalence < 0 ? "orange" : "steelblue");
+                                    .attr("fill", row_data.difference_in_prevalence < 0 ? color(series2.name) : color(series1.name));
 
                                 // Text label - positioned based on value sign
                                 const textX = row_data.difference_in_prevalence >= 0 ?
@@ -1295,12 +1300,7 @@ function render({ model, el }) {
     // TODO: Add study cohort stats
     // summary container row
     let div_cohort_summary = vis_container.appendChild(document.createElement('div'));
-    div_cohort_summary.setAttribute('class', 'row-container');
-    div_cohort_summary.style.display = 'flex';
-    div_cohort_summary.style.gap = '32px'; // space between columns
-    div_cohort_summary.style.justifyContent = 'flex-start';
-    div_cohort_summary.style.border = '1px solid #ccc'
-    div_cohort_summary.style.padding = '8px';
+    div_cohort_summary.setAttribute('class', 'row-container cohort-summary');
 
     // demographics container row
     let demographics_row = vis_container.appendChild(document.createElement('div'));
@@ -1331,20 +1331,6 @@ function render({ model, el }) {
     div_concepts_ctrl.style.display = 'flex';
     div_concepts_ctrl.style.justifyContent = 'flex-start';
     div_concepts_ctrl.style.border = 'none';
-    // table controls on the left
-    // let div_concepts_ctrl_left = div_concepts_ctrl.appendChild(
-    //     document.createElement('div'));
-    // div_concepts_ctrl_left.setAttribute('class', 'col-container');
-    // div_concepts_ctrl_left.style.display = 'flex';
-    // div_concepts_ctrl_left.style.justifyContent = 'flex-start';
-    // div_concepts_ctrl_left.style.border = 'none';
-    // // table controls on the right
-    // let div_concepts_ctrl_right = div_concepts_ctrl.appendChild(
-    //     document.createElement('div'));
-    // div_concepts_ctrl_right.setAttribute('class', 'col-container');
-    // div_concepts_ctrl_right.style.display = 'flex';
-    // div_concepts_ctrl_right.style.justifyContent = 'flex-end';
-    // div_concepts_ctrl_right.style.border = 'none';
     // the container for the concepts table itself
     let div_concepts_table = div_concepts_table_container.appendChild(document.createElement('div'));
     div_concepts_table.setAttribute('class', 'row-container');
@@ -1378,13 +1364,37 @@ function render({ model, el }) {
         VerticalBarChart({data: age_dist1, name: cohort1_name},
             {series2: {data: age_dist2, name: cohort2_name}, dimensions: {xlabel: 'Age'}}).node());
 
+
+
+    // // draw the gender barchart
+    // // console.log('gender_dist1', JSON.stringify(gender_dist1, null, 2));
+    // // console.log('gender_dist2', JSON.stringify(gender_dist2, null, 2));
+    // div_gender.appendChild(
+    //     VerticalBarChartObservable({data: gender_dist1, name: cohort1_name},
+    //         {series2: {data: gender_dist2, name: cohort2_name}, dimensions: {xlabel: 'Gender'}}));
+    //
+    // // draw the race barchart
+    // // console.log('race_stats1', JSON.stringify(race_stats1, null, 2));
+    // // console.log('race_stats2', JSON.stringify(race_stats2, null, 2));
+    // div_race.appendChild(
+    //     VerticalBarChartObservable({data: race_stats1, name: cohort1_name},
+    //         {series2: {data: race_stats2, name: cohort2_name}, dimensions: {xlabel: 'Race'}}));
+    //
+    // // draw the age barchart
+    // // console.log('age_dist1', JSON.stringify(age_dist1, null, 2));
+    // // console.log('age_dist2', JSON.stringify(age_dist2, null, 2));
+    // div_age.appendChild(
+    //     VerticalBarChartObservable({data: age_dist1, name: cohort1_name},
+    //         {series2: {data: age_dist2, name: cohort2_name}, dimensions: {xlabel: 'Age'}}));
+
+
     // draw the concepts table search box
     div_concepts_ctrl.appendChild(
-        SearchBox(conceptsTableDispatcher, {label: 'Filter by concept code or name'}).node());
+        SearchBox(conceptsTableDispatcher, {label: 'Filter concept code or name'}).node());
 
-    let default_prevalence_dp = 6;
+    const default_prevalence_dp = 6;
     div_concepts_ctrl.appendChild(
-        SpinnerBox(conceptsTableDispatcher, {label: 'D.P.', value: default_prevalence_dp}).node());
+        SpinnerBox(conceptsTableDispatcher, {label: 'Prev dp'}).node());
 
     // if there is only one set of concepts, draw a single cohort concepts table
     if(Object.keys(concepts2).length === 0) {
@@ -1395,9 +1405,9 @@ function render({ model, el }) {
     }
     else{
         // FIXME: fix the toggleswitch, then uncomment it
+        // prevalence normalized-actual switch
         // div_concepts_ctrl_right.appendChild(
         //     ToggleSwitch(conceptsTableDispatcher, {label: 'Normalize'}).node());
-        // prevalence normalized-actual switch
 
         div_concepts_table.appendChild(
             ConceptsTable({data: concepts1, name: cohort1_name}, conceptsTableDispatcher,

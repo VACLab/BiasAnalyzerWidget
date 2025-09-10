@@ -1,5 +1,9 @@
 /* PAGE LAYOUT */
 
+* {
+    box-sizing: border-box;
+}
+
 .vis-container {
     align-items: center;
     width: 100%;
@@ -21,6 +25,15 @@
     width: 100%;
 }
 
+/* COHORT SUMMARY */
+
+.cohort-summary{
+    gap: 32px; /* space between columns */
+    padding: 15px;
+    background: linear-gradient(to bottom, #ccc, #e0e0e0);
+    overflow: auto;
+}
+
 /* BAR CHART */
 
 /* overall barchart size */
@@ -33,13 +46,6 @@
 
 /* BAR CHART STYLES */
 
-/* bars */
-.bar1 {
-    fill: steelblue;
-}
-.bar2 {
-    fill: orange;
-}
 /* axis labels */
 .axis-label {
     font-family: sans-serif;
