@@ -1297,7 +1297,6 @@ function render({ model, el }) {
     let vis_container = document.createElementNS('http://www.w3.org/1999/xhtml', 'div')
     vis_container.setAttribute('class', 'vis-container');
 
-    // TODO: Add study cohort stats
     // summary container row
     let div_cohort_summary = vis_container.appendChild(document.createElement('div'));
     div_cohort_summary.setAttribute('class', 'row-container cohort-summary');
