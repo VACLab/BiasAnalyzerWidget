@@ -10,17 +10,13 @@ import * as Plot from "https://esm.sh/@observablehq/plot";
 // } // end initialize
 
 function render({ model, el }) {
-    // for testing
-    // alert('hello');
-
     const font_size = '12px';
 
     /* DISPATCHERS */
 
     // for handling the concepts table
     const conceptsTableDispatcher = d3.dispatch('filter', 'sort', 'change-dp', 'column-resize', 'view-pct');
-
-    const tooltipDispatcher = d3.dispatch("tooltip-show", "tooltip-hide");
+    const tooltipDispatcher = d3.dispatch("tooltip-show", "tooltip-hide"); // handles all tooltips
 
     function createTooltip() {
         return vis_container.append("div")
@@ -113,38 +109,6 @@ function render({ model, el }) {
         d3.selectAll(".tooltip").remove();
     });
 
-    // tooltipDispatcher.on("tooltip-show", function({ content, event }) {
-    //     // console.log("Tooltip event triggered!", { content, event });
-    //
-    //     const containerRect = vis_container.node().getBoundingClientRect();
-    //     // console.log('containerRect', containerRect);
-    //     const x = event.clientX - containerRect.left;
-    //     const y = event.clientY - containerRect.top;
-    //     console.log('Calculated position:', { x, y });
-    //
-    //     const tooltip = d3.select(".tooltip");
-    //     // console.log('Tooltip element found:', tooltip.node());
-    //
-    //     tooltip
-    //         .style("left", `${x + 10}px`)
-    //         .style("top", `${y - 10}px`)
-    //         .style("visibility", "visible")
-    //         .html(content);
-    //
-    //     // console.log('Tooltip styles applied');
-    //
-    //     // Check if tooltip exists in the DOM
-    //     const tooltipElement = d3.select(".tooltip").node();
-    //     if (!tooltipElement) {
-    //         console.error("Tooltip element not found! Make sure you've created it.");
-    //     }
-    // });
-    //
-    // tooltipDispatcher.on("tooltip-hide", function() {
-    //     d3.select(".tooltip")
-    //         .style("visibility", "hidden");
-    // });
-
     // <editor-fold desc="---------- UTILITY FUNCTIONS ----------"
 
     // clears an element
@@ -152,11 +116,24 @@ function render({ model, el }) {
         element.selectAll('*').remove();
     }
 
+    function dataEntityExists(entity){
+        if (entity && entity.data && entity.data.length > 0)
+            return true
+        else return entity && entity.length > 0;
+    }
+
     // converts timestamp to formatted date 'YYYY-MM-DD'
     function getIsoDateString(timestamp) {
         let aDate = new Date(timestamp);
         return aDate.toISOString().split('T')[0];
     }
+
+    // function getProportion(numerator, denominator, do_format = false){
+    //     if (denominator === 0)
+    //         return 'N/A';
+    //     const  proportion = numerator / denominator;
+    //     return do_format ? d3.format('.2%')(proportion) : proportion;
+    // }
 
     function isEmptyString(str) {
         return typeof str === 'string' && str.trim().length === 0;
@@ -273,51 +250,54 @@ function render({ model, el }) {
     * Return:
     *   container: DOM div element containing input box
     */
-    // function SpinnerBox(dispatch, options = {}) {
-    //     let {
-    //         value = default_prevalence_dp,
-    //         label = '',
-    //         width = 45,
-    //         min = 0,
-    //         max = 14,
-    //         step = 1
-    //     } = options;
-    //
-    //     verifyDispatch(dispatch, 'Spinnerbox');
-    //     label = label.trim();
-    //
-    //     let container = d3.create("div")
-    //         .style("padding", "4px");
-    //
-    //     // Create number input
-    //     const spinner = Inputs.number({
-    //         value: value,
-    //         min: min,
-    //         max: max,
-    //         step: step,
-    //         label: label
-    //         // width: width
-    //     });
-    //
-    //     spinner.style.width = width + 'px';
-    //     spinner.style.marginLeft = '8px';
-    //
-    //     // Optional: style inner input
-    //     const inner = spinner.querySelector("input");
-    //     inner.style.borderRadius = "8px";
-    //     inner.style.border = "1px solid #ccc";
-    //     // inner.style.padding = "4px 8px"; // optional for nicer spacing
-    //     inner.style.width = "100%";      // fills the wrapper width
-    //     inner.style.text_align = "right";
-    //
-    //     // Dispatch filter event on input
-    //     spinner.addEventListener("input", e => dispatch.call("change-dp", this, e.target.value));
-    //     // Append input to container
-    //
-    //     container.node().appendChild(spinner);
-    //
-    //     return container;
-    // }
+    function SpinnerBox(dispatch, options = {}) {
+        let {
+            value = default_prevalence_dp,
+            label = '',
+            width = 45,
+            min = 0,
+            max = 14,
+            step = 1
+        } = options;
+
+        verifyDispatch(dispatch, 'Spinnerbox');
+        label = label.trim();
+
+        // Create a container div using D3
+        let container = d3.create("div")
+            .style("padding", "4px");
+
+        // Create the number input using Inputs.number
+        const spinner = Inputs.number({
+            value: value,
+            min: min,
+            max: max,
+            step: step,
+            label: label
+        });
+
+        // Style the outer spinner element
+        spinner.style.width = width + 'px';
+        spinner.style.marginLeft = '8px';
+
+        // Style the inner input element
+        const inner = spinner.querySelector("input");
+        inner.style.borderRadius = "8px";
+        inner.style.border = "1px solid #ccc";
+        inner.style.width = "100%";
+        inner.style.textAlign = "right";
+
+        // Add event listener to dispatch changes
+        spinner.addEventListener("input", e => {
+            dispatch.call("change-dp", spinner, e.target.value);
+        });
+
+        // Append the spinner DOM node to the D3 container
+        container.append(() => spinner);
+
+        // Return the container's DOM node
+        return container.node();
+    }
 
     /*
     * draws a toggle switch
@@ -475,47 +455,13 @@ function render({ model, el }) {
             } = {}
         } = {}
     ){
-        // helper: safely coerce to number
-        const toNum = v => (v == null || v === "") ? 0 : +v;
-
-        // helper: normalize explicit proportion-like fields
-        const normalizeProp = p => {
-            if (p == null || p === "" || isNaN(+p)) return null;
-            p = +p;
-            // if user provided 0..100 percentages, convert to fraction
-            if (p > 1) return p / 100;
-            return p;
-        };
+        const series2_exists = dataEntityExists(series2);
 
         // compute sensible category domain from combined data (union)
-        const combinedData = (series2 && series2.data && series2.data.length)
+        const combinedData = series2_exists
             ? series1.data.concat(series2.data)
             : series1.data;
-
         const categories = Array.from(new Set(combinedData.map(d => d.category)));
-
-        // compute per-series totals for fallback proportion calculation
-        const sum1 = d3.sum(series1.data, d => toNum(d.value));
-        const sum2 = (series2 && series2.data && series2.data.length)
-            ? d3.sum(series2.data, d => toNum(d.value))
-            : 0;
-
-        // function to get a proportion (0..1) for an item; seriesIndex = 1 or 2
-        function getProportion(d, seriesIndex = 1) {
-            // check common fields
-            let p = null;
-            if (d.proportion != null) p = normalizeProp(d.proportion);
-            else if (d.probability != null) p = normalizeProp(d.probability);
-            else if (d.percent != null) p = normalizeProp(d.percent);
-
-            if (p != null) return p;
-
-            // fallback: compute from value relative to series total
-            const val = toNum(d.value);
-            if (seriesIndex === 1) return sum1 > 0 ? val / sum1 : 0;
-            if (seriesIndex === 2) return sum2 > 0 ? val / sum2 : 0;
-            return 0;
-        }
 
         // Create svg
         let svg = d3.create('svg')
@@ -532,10 +478,10 @@ function render({ model, el }) {
         // Y-scale
         const yMax = show_percent
           ? d3.max([
-              d3.max(series1.data, d => getProportion(d, 1)),
-              series2 && series2.data ? d3.max(series2.data, d => getProportion(d, 2)) : 0
+              d3.max(series1.data, d => d.probability),
+              series2 && series2.data ? d3.max(series2.data, d => d.probability) : 0
             ])
-          : d3.max(combinedData, d => toNum(d.value));
+          : d3.max(combinedData, d => +d.value);
 
         const yScale = d3.scaleLinear([0, yMax], [height - margin.bottom, margin.top]).nice();
 
@@ -586,14 +532,11 @@ function render({ model, el }) {
             .text(title);
 
         // Render bars & labels
-        const has_second = series2 && series2.data && series2.data.length > 0;
-
         function drawSeriesBars(container, series, series_index, class_base_name) {
 
             function getTooltipContent(d, series_name, series_index) {
-                const proportion = getProportion(d, series_index);
-                const percentage = isNaN(proportion) ? "N/A" : d3.format(".4%")(proportion);
-                return `<strong>${series_name || 'Unknown'}</strong><hr>Patient #: ${d.value || 0}<br>Proportion: ${percentage}`;
+                return `<strong>${series_name} - ${xlabel}: ${d.category}</strong><hr>Patient #: ` +
+                    `${d.value || 0}<br>Probability: ${d.probability || 0}`;
             }
 
             const class_name = class_base_name + series_index;
@@ -607,18 +550,16 @@ function render({ model, el }) {
                 .attr('class', class_name)
                 .attr('x', d => series_index === 1 ? xScale(d.category) : xScale(d.category) + half)
                 .attr('y', d => {
-                    const val = show_percent ? getProportion(d, series_index) : toNum(d.value);
-                    return yScale(val);
+                    return yScale(show_percent ? d.probability : +d.value);
                 })
-                .attr('width', has_second ? half : bw)
+                .attr('width', series2_exists ? half : bw)
                 .attr('height', d => {
-                    const val = show_percent ? getProportion(d, series_index) : toNum(d.value);
-                    return height - margin.bottom - yScale(val);
+                    return height - margin.bottom - yScale(show_percent ? d.probability : +d.value);
                 })
                 .attr('fill', d => color(series.name))
                 .on("mouseover", function (event, d, ) {
                     tooltipDispatcher.call("tooltip-show", null, {
-                        content: getTooltipContent(d, series.name, series_index),
+                        content: getTooltipContent(d, series.name, series_index, class_base_name),
                         event: event
                     });
                 })
@@ -629,38 +570,9 @@ function render({ model, el }) {
 
         // Series 1 bars
         drawSeriesBars(svg, series1, 1, 'bar');
-        if (has_second) {
+        if (series2_exists) {
             // Series 2 bars
             drawSeriesBars(svg, series2, 2, 'bar');
-
-
-            // Series 2 labels (centered on its half-bar)
-            // svg.selectAll('.label2')
-            //     .data(series2.data)
-            //     .enter()
-            //     .append('text')
-            //     .attr('class', 'label2')
-            //     .attr('x', d => xScale(d.category) + half + half / 2)
-            //     .attr('y', d => {
-            //         const val = show_percent ? getProportion(d, 2) : toNum(d.value);
-            //         return yScale(val) - 5;
-            //     })
-            //     .attr('text-anchor', 'middle')
-            //     .text(d => show_percent ? d3.format(".0%")(getProportion(d, 2)) : d3.format(",")(toNum(d.value)));
-
-            // Series 1 labels (left half)
-            // svg.selectAll('.label1')
-            //     .data(series1.data)
-            //     .enter()
-            //     .append('text')
-            //     .attr('class', 'label1')
-            //     .attr('x', d => xScale(d.category) + half / 2)
-            //     .attr('y', d => {
-            //         const val = show_percent ? getProportion(d, 1) : toNum(d.value);
-            //         return yScale(val) - 5;
-            //     })
-            //     .attr('text-anchor', 'middle')
-            //     .text(d => show_percent ? d3.format(".0%")(getProportion(d, 1)) : d3.format(",")(toNum(d.value)));
 
             // Legend (simple)
             const legendFontSize = 12;
@@ -704,11 +616,11 @@ function render({ model, el }) {
             //     .attr('class', 'label1')
             //     .attr('x', d => xScale(d.category) + bw / 2)
             //     .attr('y', d => {
-            //         const val = show_percent ? getProportion(d, 1) : toNum(d.value);
+            //         const val = show_percent ? getProportion(d, 1) : +d.value;
             //         return yScale(val) - 5;
             //     })
             //     .attr('text-anchor', 'middle')
-            //     .text(d => show_percent ? d3.format(".0%")(getProportion(d, 1)) : d3.format(",")(toNum(d.value)));
+            //     .text(d => show_percent ? d3.format(".0%")(getProportion(d, 1)) : d3.format(",")(+d.value));
         }
 
         return svg.node();
@@ -1197,8 +1109,6 @@ function render({ model, el }) {
         const barScale = d3.scaleLinear();
         let zeroX, g, outerHeight, innerY, innerH;
 
-
-
         let prevalence_dp = default_prevalence_dp;
         function renderTableCells(row) {
             const dafault_prevalence = 0;
@@ -1440,24 +1350,18 @@ function render({ model, el }) {
         {series2: {data: cohort2_stats, name: cohort2_name}});
 
     // draw the gender barchart
-    // console.log('gender_dist1', JSON.stringify(gender_dist1, null, 2));
-    // console.log('gender_dist2', JSON.stringify(gender_dist2, null, 2));
     div_gender.append(() =>
         VerticalBarChart({data: gender_dist1, name: cohort1_name},
             {series2: {data: gender_dist2, name: cohort2_name}, dimensions: {xlabel: 'Gender'}})
     );
 
     // draw the race barchart
-    // console.log('race_stats1', JSON.stringify(race_stats1, null, 2));
-    // console.log('race_stats2', JSON.stringify(race_stats2, null, 2));
     div_race.append(() =>
         VerticalBarChart({data: race_stats1, name: cohort1_name},
             {series2: {data: race_stats2, name: cohort2_name}, dimensions: {xlabel: 'Race'}})
     );
 
     // draw the age barchart
-    // console.log('age_dist1', JSON.stringify(age_dist1, null, 2));
-    // console.log('age_dist2', JSON.stringify(age_dist2, null, 2));
     div_age.append(() =>
         VerticalBarChart({data: age_dist1, name: cohort1_name},
             {series2: {data: age_dist2, name: cohort2_name}, dimensions: {xlabel: 'Age'}})
