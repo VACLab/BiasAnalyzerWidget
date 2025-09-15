@@ -20,15 +20,7 @@ function render({ model, el }) {
 
     function createTooltip() {
         return vis_container.append("div")
-            .attr("class", "tooltip")
-            .style("position", "absolute")
-            .style("visibility", "hidden")
-            .style("background", "#eee")
-            .style("color", "black")
-            .style("padding", "8px")
-            .style("border-radius", "4px")
-            .style("pointer-events", "none")
-            .style("z-index", "1000");
+            .attr("class", "tooltip");
     }
 
     // Ref: Claude AI
