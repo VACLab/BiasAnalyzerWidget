@@ -451,7 +451,7 @@ function render({ model, el }) {
                 height = 400,
                 margin = { top: 40, right: 10, bottom: 60, left: 80 },
                 padding = 0.1,
-                showPercent: show_percent = true
+                show_probability = true
             } = {}
         } = {}
     ){
@@ -476,7 +476,7 @@ function render({ model, el }) {
             .padding(padding);
 
         // Y-scale
-        const yMax = show_percent
+        const yMax = show_probability
           ? d3.max([
               d3.max(series1.data, d => d.probability),
               series2 && series2.data ? d3.max(series2.data, d => d.probability) : 0
@@ -504,9 +504,9 @@ function render({ model, el }) {
             .text(xlabel);
 
         // Y-axis with formatting
-        const yAxis = show_percent
-            ? d3.axisLeft(yScale).tickFormat(d3.format(".0%"))
-            : d3.axisLeft(yScale).tickFormat(d3.format(","));
+        const yAxis = show_probability
+            ? d3.axisLeft(yScale).tickFormat(d3.format("")) :
+            d3.axisLeft(yScale).tickFormat(d3.format(","));
 
         svg.append('g')
             .attr('transform', `translate(${margin.left}, 0)`)
@@ -550,11 +550,11 @@ function render({ model, el }) {
                 .attr('class', class_name)
                 .attr('x', d => series_index === 1 ? xScale(d.category) : xScale(d.category) + half)
                 .attr('y', d => {
-                    return yScale(show_percent ? d.probability : +d.value);
+                    return yScale(show_probability ? d.probability : +d.value);
                 })
                 .attr('width', series2_exists ? half : bw)
                 .attr('height', d => {
-                    return height - margin.bottom - yScale(show_percent ? d.probability : +d.value);
+                    return height - margin.bottom - yScale(show_probability ? d.probability : +d.value);
                 })
                 .attr('fill', d => color(series.name))
                 .on("mouseover", function (event, d, ) {
@@ -637,12 +637,17 @@ function render({ model, el }) {
             dimensions = { height: 432, row_height: 30 }
         } = {}
     ){
+        // console.log('series1', series1);
+
+        function getTooltipContent(d, series_name) {
+            const heading = `<strong>Concept: ${d.concept_code}</strong><br>(${d.concept_name})<hr>`;
+            let msg = ` (no difference)`;
+            if(series_name !== "")
+                msg = ` (higher in ${series_name})`;
+                return `${heading} Diff. in Prev: ${Math.abs(d.difference_in_prevalence)}<br>${msg}`;
+        }
 
         function prepareConceptsCompareData(data1, data2) {
-
-            // console.log('concepts1', data1)
-            // console.log('concepts2', data2)
-
             let mergedList = data1.map(item1 => {
                 const item2 = data2.find(item => item.concept_code === item1.concept_code);
                 return Object.assign({}, item1, item2);
@@ -672,12 +677,6 @@ function render({ model, el }) {
                 });
                 return rearrangedItem;
             });
-
-            // mergedList.sort((a, b) => b.bias - a.bias);
-            // mergedList.sort((a, b) => b.bias - a.bias);
-
-            // console.log('mergedList', mergedList);
-
             return mergedList;
         }
 
@@ -706,89 +705,6 @@ function render({ model, el }) {
         //
         //     renderTableCells(row);
         // }
-
-        function handleColumnResize(data) {
-            const {phase, columnData, element} = data;
-
-            switch (phase) {
-                case "start":
-                    const {startWidth, startX} = data;
-                    columnData.startWidth = startWidth;
-                    columnData.startX = startX;
-                    break;
-
-                case "drag":
-                    const {currentX} = data;
-                    const dx = currentX - columnData.startX;
-                    const newWidth = Math.max(30, columnData.startWidth + dx);
-                    columnData.width = newWidth;
-
-                    // Update header rect using the passed element reference
-                    d3.select(element.parentNode).select("rect").attr("width", newWidth);
-                    // Update resize handle position
-                    d3.select(element).attr("x", newWidth - 5);
-
-                    // Recalculate x positions for all columns after this one
-                    let x = 0;
-                    columns_data.forEach(col => {
-                        col.x = x;
-                        x += col.width;
-                    });
-
-                    // Update header positions
-                    headers_g.selectAll("g").attr("transform", col => `translate(${col.x},0)`);
-
-                    // Update sort indicator positions within each header group
-                    headers_g.selectAll("g").select(".sort-indicator")
-                        .attr("x", d => d.width - 15);
-
-                    // Update body cell positions and widths using D3 selections
-                    body_svg.selectAll(".row").each(function () {
-                        d3.select(this).selectAll(".cell")
-                            .data(columns_data)
-                            .attr("transform", col => `translate(${col.x},0)`)
-                            .select(".cell-bg")
-                            .attr("width", col => col.width);
-                    });
-
-                    // Update body and header SVG width
-                    const totalWidth = d3.sum(columns_data, c => c.width);
-                    body_svg.attr("width", totalWidth);
-                    headers_svg.attr("width", totalWidth);
-                    break;
-
-                case "end":
-                    // Clean up temporary properties
-                    delete columnData.startWidth;
-                    delete columnData.startX;
-                    break;
-            }
-        }
-
-        function handleFilterConcepts(search_term) {
-            const normalized = search_term.toLowerCase().replace(/[^a-z0-9]/g, "");
-
-            // Get current rows (need to re-select since they might have changed due to sorting)
-            const currentRows = rows_g.selectAll(".row");
-
-            currentRows.style("display", null);
-            currentRows.filter(d => {
-                const code = d.concept_code.toLowerCase();
-                const name = d.concept_name.toLowerCase().replace(/[^a-z0-9]/g, "");
-                return !(code.startsWith(normalized) || name.includes(normalized));
-            }).style("display", "none");
-
-            // Recompute Y positions for visible rows
-            let yOffset = 0;
-            currentRows.filter(function () {
-                return d3.select(this).style("display") !== "none";
-            })
-                .each(function () {
-                    d3.select(this).attr("transform", `translate(0, ${yOffset})`);
-                    yOffset += row_height; // Use row_height instead of parsing rect height
-                });
-            body_svg.attr("height", yOffset);
-        }
 
         // Function to handle sorting logic
         // TODO: fix jumpy redrawing of the table during sort
@@ -821,18 +737,9 @@ function render({ model, el }) {
 
             // Sort the data
             table_data.sort((a, b) => {
-                // console.log('handleSort data = ', d);
-
                 let aVal, bVal;
-
-                // if (typeof d.field === "function") {
-                //     aVal = d.field(a);
-                //     bVal = d.field(b);
-                //     console.log('Do I ever come here?');
-                // } else {
-                    aVal = a[d.field];
-                    bVal = b[d.field];
-                // }
+                aVal = a[d.field];
+                bVal = b[d.field];
 
                 // Handle null/undefined values
                 if (aVal === null || aVal === undefined) aVal = "";
@@ -845,14 +752,8 @@ function render({ model, el }) {
                 }
 
                 if(d.field === 'difference_in_prevalence'){
-                //     console.log('a = ', a);
-                //     console.log('b = ', b);
-                //     console.log('aVal = ', aVal);
-                //     console.log('bVal = ', bVal);
                     aVal = Math.abs(aVal);
                     bVal = Math.abs(bVal);
-                //     console.log('Math.abs(aVal) = ', aVal);
-                //     console.log('Math.abs(bVal) = ', bVal);
                 }
 
                 let comparison = 0;
@@ -893,8 +794,6 @@ function render({ model, el }) {
             table_data = series1.data;
         }
 
-        // console.log('table_data', table_data);
-
         const text_offset_x = 10;
         const { height, row_height } = dimensions;
 
@@ -913,13 +812,10 @@ function render({ model, el }) {
         // 1. replacing the underscore with a space, and
         // 2. capitalizing the first letter of each word
         function makeKeysWords (keys, series1_name, series2_name) {
-            // console.log('keys', keys);
-
             for (let i = 0; i < keys.length; i++) {
                 keys[i] = keys[i].replace("cohort1", series1_name);
                 keys[i] = keys[i].replace("cohort2", series2_name);
             }
-
             return keys.map(key => {
                 return toLabel(key);
             });
@@ -1039,11 +935,88 @@ function render({ model, el }) {
         });
 
         dispatch.on("filter", function(search_term) {
-            handleFilterConcepts(search_term);
-        })
+            const normalized = search_term.toLowerCase().replace(/[^a-z0-9]/g, "");
 
-        dispatch.on("column-resize", function(columnData) {
-            handleColumnResize(columnData);
+            // Get current rows (need to re-select since they might have changed due to sorting)
+            const currentRows = rows_g.selectAll(".row");
+
+            currentRows.style("display", null);
+            currentRows.filter(d => {
+                const code = d.concept_code.toLowerCase();
+                const name = d.concept_name.toLowerCase().replace(/[^a-z0-9]/g, "");
+                return !(code.startsWith(normalized) || name.includes(normalized));
+            }).style("display", "none");
+
+            // Recompute Y positions for visible rows
+            let yOffset = 0;
+            currentRows.filter(function () {
+                return d3.select(this).style("display") !== "none";
+            })
+                .each(function () {
+                    d3.select(this).attr("transform", `translate(0, ${yOffset})`);
+                    yOffset += row_height; // Use row_height instead of parsing rect height
+                });
+            body_svg.attr("height", yOffset);
+        });
+
+        dispatch.on("column-resize", function(data) {
+            const {phase, columnData, element} = data;
+
+            // console.log('column-resize handler this', this)
+
+            switch (phase) {
+                case "start":
+                    const {startWidth, startX} = data;
+                    columnData.startWidth = startWidth;
+                    columnData.startX = startX;
+                    break;
+
+                case "drag":
+                    const {currentX} = data;
+                    const dx = currentX - columnData.startX;
+                    const newWidth = Math.max(30, columnData.startWidth + dx);
+                    columnData.width = newWidth;
+
+                    // Update header rect using the passed element reference
+                    d3.select(element.parentNode).select("rect").attr("width", newWidth);
+                    // Update resize handle position
+                    d3.select(element).attr("x", newWidth - 5);
+
+                    // Recalculate x positions for all columns after this one
+                    let x = 0;
+                    columns_data.forEach(col => {
+                        col.x = x;
+                        x += col.width;
+                    });
+
+                    // Update header positions
+                    headers_g.selectAll("g").attr("transform", col => `translate(${col.x},0)`);
+
+                    // Update sort indicator positions within each header group
+                    headers_g.selectAll("g").select(".sort-indicator")
+                        .attr("x", d => d.width - 15);
+
+                    // Update body cell positions and widths using D3 selections
+                    body_svg.selectAll(".row").each(function () {
+                        d3.select(this).selectAll(".cell")
+                            .data(columns_data)
+                            .attr("transform", col => `translate(${col.x},0)`)
+                            .select(".cell-bg")
+                            .attr("width", col => col.width);
+                    });
+
+                    // Update body and header SVG width
+                    const totalWidth = d3.sum(columns_data, c => c.width);
+                    body_svg.attr("width", totalWidth);
+                    headers_svg.attr("width", totalWidth);
+                    break;
+
+                case "end":
+                    // Clean up temporary properties
+                    delete columnData.startWidth;
+                    delete columnData.startX;
+                    break;
+            }
         });
 
         // dispatch.on("change-dp", function(dp_value) {
@@ -1154,6 +1127,13 @@ function render({ model, el }) {
                             return getPrevalenceValue(row_data[col.field], col, row_data);
                         });
                 } else {
+
+                    function getHighestPrevalenceSeriesName(d) {
+                        if (d.cohort1_prevalence > d.cohort2_prevalence) return 1;
+                        if (d.cohort1_prevalence < d.cohort2_prevalence) return 2;
+                        return 0;
+                    }
+
                     switch (col.type) {
                         case "text":
                             cell.append("text")
@@ -1225,7 +1205,27 @@ function render({ model, el }) {
                                     .attr("y", innerY)
                                     .attr("width", Math.abs(barScale(row_data.difference_in_prevalence) - zeroX))
                                     .attr("height", innerH)
-                                    .attr("fill", row_data.difference_in_prevalence < 0 ? color(series2.name) : color(series1.name));
+                                    .attr("fill", row_data.difference_in_prevalence < 0 ? color(series2.name) : color(series1.name))
+                                    .on("mouseover", function (event, d, ) {
+                                        // console.log('d = ', d);
+                                        // which prevalence is higher?
+                                        const highest_prevalence = getHighestPrevalenceSeriesName(d);
+                                        // get the name of the series with the higher prevalence
+                                        let highest_series_name = "";
+                                        if(highest_prevalence === 1)
+                                            highest_series_name = series1.name
+                                        else if (highest_prevalence === 2)
+                                            highest_series_name = series2.name;
+
+                                        // tooltip call
+                                        tooltipDispatcher.call("tooltip-show", null, {
+                                            content: getTooltipContent(d, highest_series_name),
+                                            event: event
+                                        });
+                                    })
+                                    .on("mouseout", function () {
+                                        tooltipDispatcher.call("tooltip-hide");
+                                    });
 
                                 // Text label - positioned based on value sign
                                 const textX = row_data.difference_in_prevalence >= 0 ?
@@ -1315,7 +1315,6 @@ function render({ model, el }) {
     // <editor-fold desc="---------- PAGE LAYOUT ----------">
 
     const vis_container = d3.select(el).append("div").attr('class', 'vis_container');  // overall container
-    // let tooltip;vis_container.append("div").attr('class', 'tooltip');   // tooltip container
 
     // summary container row
     const div_cohort_summary = vis_container.append('div').attr('class', 'row-container cohort-summary');
