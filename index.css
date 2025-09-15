@@ -25,12 +25,26 @@
     width: 100%;
 }
 
+/* TOOLTIP */
+.tooltip {
+    position: absolute;
+    visibility: hidden;
+    background: #eee;
+    color: black;
+    padding: 8px;
+    border-radius: 8px;
+    border: 1px solid darkgray;
+    /*background-image: linear-gradient(to right, lightgray, white);*/
+    pointer-events: none;
+    z-index: 1000;
+}
+
 /* COHORT SUMMARY */
 
 .cohort-summary{
     gap: 32px; /* space between columns */
     padding: 15px;
-    background: linear-gradient(to bottom, #ccc, #e0e0e0);
+    background-image: linear-gradient(to right, lightgray, darkgray);
     overflow: auto;
 }
 
@@ -114,7 +128,7 @@
 /* Circle knob */
 .slider:before {
     position: absolute;
-    content: "";
+    content: ;
     height: 14px;     /* knob slightly smaller than track */
     width: 14px;
     left: 1px;
