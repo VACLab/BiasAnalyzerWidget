@@ -26,10 +26,11 @@
 }
 
 /* TOOLTIP */
+
 .tooltip {
     position: absolute;
     visibility: hidden;
-    background: #eee;
+    background: whitesmoke;
     color: black;
     padding: 8px;
     border-radius: 8px;
@@ -38,6 +39,24 @@
     pointer-events: none;
     z-index: 1000;
 }
+
+/* TOGGLE SWITCH CONTROL */
+
+/*input[type="range"] {*/
+/*    width: 60px;*/
+/*    height: 30px;*/
+/*    background: transparent;*/
+/*    appearance: none;*/
+/*}*/
+
+/*input[type="range"]::-webkit-slider-thumb {*/
+/*    width: 30px;*/
+/*    height: 30px;*/
+/*    background: #007bff;*/
+/*    border-radius: 50%;*/
+/*    cursor: pointer;*/
+/*    appearance: none;*/
+/*}*/
 
 /* COHORT SUMMARY */
 
