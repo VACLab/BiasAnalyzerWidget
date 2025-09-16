@@ -249,7 +249,7 @@ function render({ model, el }) {
             label = '',
             width = 45,
             min = 0,
-            max = 14,
+            max = 16,
             step = 1
         } = options;
 
@@ -282,6 +282,10 @@ function render({ model, el }) {
 
         // Add event listener to dispatch changes
         spinner.addEventListener("input", e => {
+            if (e.target.value < 0)
+                e.target.value = 0
+            else if (e.target.value > 16)
+                e.target.value = 16;
             dispatch.call("change-dp", spinner, e.target.value);
         });
 
@@ -674,7 +678,7 @@ function render({ model, el }) {
             let msg = ` (no difference)`;
             if(series_name !== "")
                 msg = ` (higher in ${series_name})`;
-            return `${heading} Diff. in Prev: ${Math.abs(d.difference_in_prevalence)}<br>${msg}`;
+            return `${heading} Diff. in Prev: ${Math.abs(d.difference_in_prevalence).toFixed(prevalence_dp)}<br>${msg}`;
         }
 
         function prepareConceptsCompareData(data1, data2) {
@@ -1011,6 +1015,34 @@ function render({ model, el }) {
                     delete columnData.startX;
                     break;
             }
+        });
+
+        dispatch.on("change-dp", function(dp_value) {
+            // handleChangeDP(dp_value);
+
+            // function handleChangeDP(dp_value) {
+                // Parse and validate the decimal places value
+                let newDP = parseInt(dp_value);
+                if (isNaN(newDP) || newDP < 0 || newDP > 16) {
+                    newDP = 0;
+                }
+
+                // Update the prevalence_dp variable (move it outside renderTableCells to module scope)
+                prevalence_dp = newDP;
+
+                // Clear existing table body content
+                rows_g.selectAll(".row").remove();
+
+                // Re-render the table with new decimal places
+                const row = rows_g.selectAll(".row")
+                    .data(table_data)
+                    .enter()
+                    .append("g")
+                    .attr("class", "row")
+                    .attr("transform", (d, i) => `translate(0, ${i * row_height})`);
+
+                renderTableCells(row);
+            // }
         });
 
         // === Column resizing handle ===
@@ -1365,8 +1397,9 @@ function render({ model, el }) {
     );
 
     const default_prevalence_dp = 6;
-    // div_concepts_ctrl.appendChild(
-    //     SpinnerBox(conceptsTableDispatcher, {label: 'Prev dp'}).node());
+    div_concepts_ctrl.append(() =>
+        SpinnerBox(conceptsTableDispatcher, {label: 'Prev dp'})
+    );
 
     // if there is only one set of concepts, draw a single cohort concepts table
     if(Object.keys(concepts2).length === 0) {
