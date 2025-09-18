@@ -40,24 +40,6 @@
     z-index: 1000;
 }
 
-/* TOGGLE SWITCH CONTROL */
-
-/*input[type="range"] {*/
-/*    width: 60px;*/
-/*    height: 30px;*/
-/*    background: transparent;*/
-/*    appearance: none;*/
-/*}*/
-
-/*input[type="range"]::-webkit-slider-thumb {*/
-/*    width: 30px;*/
-/*    height: 30px;*/
-/*    background: #007bff;*/
-/*    border-radius: 50%;*/
-/*    cursor: pointer;*/
-/*    appearance: none;*/
-/*}*/
-
 /* COHORT SUMMARY */
 
 .cohort-summary{
@@ -76,8 +58,6 @@
     width: 100%;  /* allows resize to fit the page*/
     height: auto;
 }
-
-/* BAR CHART STYLES */
 
 /* axis labels */
 .axis-label {
@@ -116,52 +96,24 @@
     max-height: 370px; /* header height removed */
 }
 
-/* Container */
-.switch {
-    position: relative;
-    display: inline-block;
-    width: 32px;   /* same width */
-    height: 18px;  /* half the original height */
+/* concepts table row hover and select */
+
+.selected .cell-bg {
+    fill: #f8f9fa !important;
+    stroke: #ccc !important;
 }
 
-/* Hide the default checkbox */
-.switch input {
-    opacity: 0;
-    width: 0;
-    height: 0;
+.selected {
+    opacity: 1;
 }
 
-/* Slider track */
-.slider {
-    position: absolute;
-    cursor: pointer;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: grey;
-    transition: .4s;
-    border-radius: 18px; /* round corners = height */
+.row-border {
+    fill: none;
+    stroke: #007bff;
+    stroke-width: 2px;
+    pointer-events: none;
 }
 
-/* Circle knob */
-.slider:before {
-    position: absolute;
-    content: ;
-    height: 14px;     /* knob slightly smaller than track */
-    width: 14px;
-    left: 1px;
-    bottom: 1px;
-    background-color: lightgray;
-    transition: .4s;
-    border-radius: 50%;
-}
-
-/* Checked state */
-input:checked + .slider {
-    background-color: lightgreen;
-}
-
-input:checked + .slider:before {
-    transform: translateX(18px);
+g[cursor="pointer"]:hover .cell-bg {
+    fill: #f5f5f5;
 }

@@ -717,7 +717,6 @@ function render({ model, el }) {
         // <editor-fold desc="---------- EVENT HANDLER FUNCTIONS ----------">
 
         // Function to handle sorting logic
-        // TODO: fix jumpy redrawing of the table during sort
         function handleSort(d, skipToggle = false) {
             // console.log('handleSort d = ', d);
             // Toggle sort direction (unless we're initializing)
@@ -951,6 +950,8 @@ function render({ model, el }) {
                     const name = d.concept_name.toLowerCase().replace(/[^a-z0-9]/g, "");
                     return code.startsWith(normalized) || name.includes(normalized);
                 });
+                // Clear selections for hidden rows
+                clearHiddenSelections(filtered_data);
             }
 
             // Re-render with filtered data
@@ -1088,6 +1089,43 @@ function render({ model, el }) {
 
         // === BODY ===
 
+        // track selected rows
+        let selectedRows = new Set();
+
+        // clear selections for filtered-out rows
+        function clearHiddenSelections(visibleData) {
+            const visibleRowIds = new Set(visibleData.map(d => d.id || d.name || JSON.stringify(d)));
+
+            // Find selected rows that are no longer visible
+            const hiddenSelectedRows = [...selectedRows].filter(rowId => !visibleRowIds.has(rowId));
+
+            // Remove hidden rows from selection
+            hiddenSelectedRows.forEach(rowId => {
+                selectedRows.delete(rowId);
+            });
+
+            // If we had selections that are now hidden, update the UI
+            if (hiddenSelectedRows.length > 0) {
+                rows_g.selectAll("g").classed("selected", false);
+                rows_g.selectAll(".row-border").remove();
+
+                // Re-apply selection class and borders only to visible selected rows
+                rows_g.selectAll("g").each(function(d) {
+                    const rowId = d.id || d.name || JSON.stringify(d);
+                    if (selectedRows.has(rowId)) {
+                        d3.select(this).classed("selected", true);
+                        // Re-add border for visible selected rows
+                        d3.select(this).append("rect")
+                            .attr("class", "row-border")
+                            .attr("x", 0)
+                            .attr("y", 0)
+                            .attr("width", total_table_width)
+                            .attr("height", row_height);
+                    }
+                });
+            }
+        }
+
         const body_svg = container.append("svg")
             .attr("width", total_table_width)
             .attr("height", filtered_data.length * row_height);
@@ -1107,6 +1145,42 @@ function render({ model, el }) {
         let prevalence_dp = default_prevalence_dp;
         function renderTableCells(row) {
             const dafault_prevalence = 0;
+
+            // Add click handler to the row group itself
+            row.attr("cursor", "pointer")
+                .on("click", function(event, row_data) {
+                    // Get a unique identifier for this row (adjust based on your data structure)
+                    const rowId = row_data.id || row_data.name || JSON.stringify(row_data);
+
+                    // Check if this row is already selected
+                    if (selectedRows.has(rowId)) {
+                        // Deselect this row
+                        selectedRows.delete(rowId);
+                        d3.select(this).classed("selected", false);
+                        // Remove the border
+                        d3.select(this).select(".row-border").remove();
+                        onRowSelect(row_data, false);
+                    } else {
+                        // Clear all previous selections first
+                        selectedRows.clear();
+                        rows_g.selectAll("g").classed("selected", false);
+                        rows_g.selectAll(".row-border").remove();
+
+                        // Select this row
+                        selectedRows.add(rowId);
+                        d3.select(this).classed("selected", true);
+
+                        // Add border around the entire row
+                        d3.select(this).append("rect")
+                            .attr("class", "row-border")
+                            .attr("x", 0)
+                            .attr("y", 0)
+                            .attr("width", total_table_width)
+                            .attr("height", row_height);
+
+                        onRowSelect(row_data, true);
+                    }
+                });
 
             function getPrevalenceValue(val, col, row_data) {
                 // Define which fields are numeric
@@ -1274,6 +1348,12 @@ function render({ model, el }) {
             });
         }
 
+        // callback function for handling row selection
+        function onRowSelect(rowData, isSelected) {
+            console.log(`Row ${isSelected ? 'selected' : 'deselected'}:`, rowData);
+            // TODO: add selection logic here
+        }
+
         function updateTableBody() {
             // Use filtered_data instead of table_data
             const rows = rows_g.selectAll(".row")
@@ -1353,6 +1433,7 @@ function render({ model, el }) {
     // concepts row
     const concepts_row = vis_container.append('div').attr('class', 'row-container concepts-row');
     const div_concepts_table_container = concepts_row.append('div').attr('class', 'col-container');
+    const div_concept_dragbar = concepts_row.append('div').attr('class', 'col-container dragbar');
     const div_concept_detail_container = concepts_row.append('div').attr('class', 'col-container');
 
     // concepts controls row
@@ -1409,11 +1490,6 @@ function render({ model, el }) {
         );
     }
     else{
-        // FIXME: fix the toggleswitch, then uncomment it -- not sure if this is needed
-        // prevalence normalized-actual switch
-        // div_concepts_ctrl_right.appendChild(
-        //     ToggleSwitch(conceptsTableDispatcher, {label: 'Normalize'}).node());
-
         div_concepts_table.append(() =>
             ConceptsTable({data: concepts1, name: cohort1_name}, conceptsTableDispatcher,
                 {series2: {data: concepts2, name: cohort2_name}})
