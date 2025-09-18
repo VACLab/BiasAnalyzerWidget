@@ -147,7 +147,6 @@
 /* Circle knob */
 .slider:before {
     position: absolute;
-    content: ;
     height: 14px;     /* knob slightly smaller than track */
     width: 14px;
     left: 1px;
@@ -164,4 +163,40 @@ input:checked + .slider {
 
 input:checked + .slider:before {
     transform: translateX(18px);
+}
+
+/* drag bar */
+.dragbar {
+    flex: 0 0 10px !important; /* Override the flex: 1 */
+    width: 10px !important; /* Override the width: 100% */
+    background-color: #ccc;
+    cursor: col-resize;
+    border-left: 1px solid #999;
+    border-right: 1px solid #999;
+    margin: 5px 0; /* Only top/bottom margin */
+}
+
+.dragbar:hover {
+    background-color: #aaa;
+}
+
+/* concepts table row hover and select */
+.selected .cell-bg {
+    fill: #f8f9fa !important;
+    stroke: #ccc !important;
+}
+
+.selected {
+    opacity: 1;
+}
+
+.row-border {
+    fill: none;
+    stroke: #007bff;
+    stroke-width: 2px;
+    pointer-events: none;
+}
+
+g[cursor="pointer"]:hover .cell-bg {
+    fill: #f5f5f5;
 }
