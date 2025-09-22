@@ -165,19 +165,21 @@ function render({ model, el }) {
 
     // <editor-fold desc="---------- DEFINE DATA ----------">
 
+    var cohort1_meta = model.get('_cohort1_meta');
     var cohort1_stats = model.get('_cohort1_stats');
     var concepts1 = model.get('_concepts1');
     var race_stats1 = model.get('_race_stats1');
     var gender_dist1 = model.get('_gender_dist1');
     var age_dist1 = model.get('_age_dist1');
-    var cohort1_name = model.get('_cohort1_name');
+    var cohort1_shortname = model.get('_cohort1_shortname');
 
+    var cohort2_meta = model.get('_cohort2_meta');
     var cohort2_stats = model.get('_cohort2_stats');
     var concepts2 = model.get('_concepts2');
     var race_stats2 = model.get('_race_stats2');
     var gender_dist2 = model.get('_gender_dist2');
     var age_dist2 = model.get('_age_dist2');
-    var cohort2_name = model.get('_cohort2_name');
+    var cohort2_shortname = model.get('_cohort2_shortname');
 
     // </editor-fold>
 
@@ -390,7 +392,7 @@ function render({ model, el }) {
 
     // <editor-fold desc="---------- SUMMARY STATISTICS FUNCTIONS ----------">
 
-    function SummaryStatistics(container, series1, { series2 = { data: null, name: "cohort 2" } } = {}) {
+    function SummaryStatistics(container, series1, { series2 = { data: null, meta: null, shortname: "cohort 2" } } = {}) {
         // Main container: vertical layout
         container.style('display', 'flex')
             .style('flex-direction', 'column')
@@ -412,7 +414,7 @@ function render({ model, el }) {
 
             // Cohort name in bold
             cohortBlock.append('div')
-                .text(cohort.name)
+                .text(cohort.shortname)
                 .style('font-weight', 'bold')
                 .style('font-size', '12px');
 
@@ -454,7 +456,7 @@ function render({ model, el }) {
 
         // Draw first series
         if (!series2.data || series2.data.length === 0)
-            series1.name = '';
+            series1.shortname = '';
         drawSeriesSummary(container, series1);
 
         // Draw second series below the first if it has data
@@ -471,15 +473,15 @@ function render({ model, el }) {
     function VerticalBarChart(
         series1,
         {
-            series2 = { data: null, name: "cohort 2" },
+            series2 = { data: null, total_count: null, shortname: "cohort 2"},
             dimensions: {
                 xlabel = "",
                 title = "",
                 width = 600,
-                height = 400,
+                height = 200,
                 margin = { top: 40, right: 10, bottom: 60, left: 80 },
                 padding = 0.1,
-                show_probability = true
+                show_Percentage: show_percentage = true
             } = {}
         } = {}
     ) {
@@ -487,8 +489,11 @@ function render({ model, el }) {
         const combinedData = series2_exists
             ? series1.data.concat(series2.data)
             : series1.data;
+
+        xlabel = toLabel(xlabel);
+
         const categories = Array.from(new Set(combinedData.map(d => d.category)));
-        let ylabel = show_probability ? 'Probability' : 'Patients Count';
+        let ylabel = show_percentage ? 'Percentage' : 'Patients Count';
 
         // handles the vertical bar chart
         const toggle_view_dispatcher = d3.dispatch("toggle_view"); // handles toggling between value and probability
@@ -503,7 +508,7 @@ function render({ model, el }) {
         svg.append("g")
             .attr("transform", `translate(${width - margin.right - 160}, ${10})`)
             .append(() => ToggleSwitch(toggle_view_dispatcher, {
-                label: "Show Probability", initial_state: show_probability
+                label: "Show Percentage", initial_state: show_percentage
             }));
 
         // X scale
@@ -511,7 +516,7 @@ function render({ model, el }) {
             .padding(padding);
 
         const color = d3.scaleOrdinal()
-            .domain([series1.name, series2.name])
+            .domain([series1.shortname, series2.shortname])
             .range(d3.schemePaired.slice(0, 2));
 
         // X-axis
@@ -541,7 +546,7 @@ function render({ model, el }) {
             .text(ylabel);
 
         function drawYAxis() {
-            const yMax = show_probability
+            const yMax = show_percentage
                 ? d3.max([
                     d3.max(series1.data, d => d.probability),
                     series2_exists ? d3.max(series2.data, d => d.probability) : 0
@@ -551,16 +556,15 @@ function render({ model, el }) {
             const yScale = d3.scaleLinear([0, yMax], [height - margin.bottom, margin.top]).nice();
             y_axis_label.text(ylabel);
 
-            const yAxis = show_probability
-                ? d3.axisLeft(yScale).tickFormat(d3.format(""))
-                : d3.axisLeft(yScale).tickFormat(d3.format(","));
+            const yAxis = show_percentage
+                ? d3.axisLeft(yScale).ticks(2).tickFormat(d3.format(""))
+                : d3.axisLeft(yScale).ticks(2).tickFormat(d3.format(","));
 
             yAxisGroup.transition().duration(500).call(yAxis);
             return yScale;
         }
 
         let yScale = drawYAxis();
-
         if (title === '' && xlabel !== '') title = xlabel + ' Distribution';
         svg.append('text')
             .attr('class', 'chart-title')
@@ -570,10 +574,9 @@ function render({ model, el }) {
             .text(title);
 
         function drawSeriesBars(container, series, series_index, class_base_name, yScale) {
-
-            function getTooltipContent(d, series_name, series_index) {
-                return `<strong>${series_name} - ${xlabel}: ${d.category}</strong><hr>Patient #: ` +
-                    `${d.value || 0}<br>Probability: ${d.probability || 0}`;
+            function getTooltipContent(d, series, xlabel) {
+                const patient_count_text = `${d.value || 0}/${series.total_count} (${d3.format(".0%")(d.probability || 0)})`;
+                return `<strong>${series.shortname}: ${xlabel + ': ' || ''} ${d.category}</strong><hr>Count: ${patient_count_text}`;
             }
 
             const class_name = class_base_name + series_index;
@@ -584,7 +587,7 @@ function render({ model, el }) {
                 .data(series.data, d => d.category)
                 .on("mouseover", function (event, d, ) {
                     tooltipDispatcher.call("show", null, {
-                        content: getTooltipContent(d, series.name, series_index, class_base_name),
+                        content: getTooltipContent(d, series, xlabel),
                         event: event
                     });
                 })
@@ -597,12 +600,12 @@ function render({ model, el }) {
                     .attr('class', class_name)
                     .attr('x', d => series_index === 1 ? xScale(d.category) : xScale(d.category) + half)
                     .attr('width', series2_exists ? half : bw)
-                    .attr('y', d => yScale(show_probability ? d.probability : +d.value))
-                    .attr('height', d => height - margin.bottom - yScale(show_probability ? d.probability : +d.value))
-                    .attr('fill', d => color(series.name)),
+                    .attr('y', d => yScale(show_percentage ? d.probability : +d.value))
+                    .attr('height', d => height - margin.bottom - yScale(show_percentage ? d.probability : +d.value))
+                    .attr('fill', d => color(series.shortname)),
                 update => update.transition().duration(500)
-                    .attr('y', d => yScale(show_probability ? d.probability : +d.value))
-                    .attr('height', d => height - margin.bottom - yScale(show_probability ? d.probability : +d.value))
+                    .attr('y', d => yScale(show_percentage ? d.probability : +d.value))
+                    .attr('height', d => height - margin.bottom - yScale(show_percentage ? d.probability : +d.value))
             );
         }
 
@@ -611,8 +614,8 @@ function render({ model, el }) {
             drawSeriesBars(svg, series2, 2, 'bar', yScale);
 
             const legend_data = [
-                { label: series1.name, color: color(series1.name) },
-                { label: series2.name, color: color(series2.name) }
+                { label: series1.shortname, color: color(series1.shortname) },
+                { label: series2.shortname, color: color(series2.shortname) }
             ];
 
             const legend = svg.append('g')
@@ -640,15 +643,15 @@ function render({ model, el }) {
 
         // Dispatch listener to redraw y-axis and bars
         toggle_view_dispatcher.on("toggle_view", function(state) {
-            show_probability = state;
-            ylabel = show_probability ? 'Probability' : 'Patients Count';
+            show_percentage = state;
+            ylabel = show_percentage ? 'Percentage' : 'Patients Count';
             yScale = drawYAxis();
             drawSeriesBars(svg, series1, 1, 'bar', yScale);
             if (series2_exists) {
                 drawSeriesBars(svg, series2, 2, 'bar', yScale);
             }
         });
-        toggle_view_dispatcher.call("toggle_view", null, show_probability); // initialize state
+        toggle_view_dispatcher.call("toggle_view", null, show_percentage); // initialize state
 
         return svg.node();
     }
@@ -660,12 +663,10 @@ function render({ model, el }) {
     function ConceptsTable(
         series1, dispatch,
         {
-            series2 = { data: null, name: "baseline" },
+            series2 = { data: null, shortname: "baseline" },
             dimensions = { height: 432, row_height: 30 }
         } = {}
     ){
-        // console.log('series1', series1);
-
         let full_data = [];       // original dataset
         let visible_data = [];    // filtered + sorted subset
 
@@ -673,7 +674,13 @@ function render({ model, el }) {
         let current_filter = ""; // Track current filter state
         let filtered_data; // Will be initialized after table_data
 
-        function getTooltipContent(d, series_name) {
+
+        // function getTooltipContent(d, series, xlabel) {
+        //     const patient_count_text = `${d.value || 0}/${series.total_count} (${d3.format(".0%")(d.probability || 0)})`;
+        //     return `<strong>${series.name}: ${xlabel + ': ' || ''} ${d.category}</strong><hr>Count: ${patient_count_text}`;
+        // }
+
+        function getTooltipContent(d, series_name){
             const heading = `<strong>Concept: ${d.concept_code}</strong><br>(${d.concept_name})<hr>`;
             let msg = ` (no difference)`;
             if(series_name !== "")
@@ -795,8 +802,8 @@ function render({ model, el }) {
             throw new Error("ConceptsTable requires at least one cohort.");
         }
 
-        if (isEmptyString(series1.name)) {
-            series1.name = 'study cohort';
+        if (isEmptyString(series1.shortname)) {
+            series1.shortname = 'study cohort';
         }
 
         // ==== Validate optional params ====
@@ -845,7 +852,7 @@ function render({ model, el }) {
             });
         }
 
-        const headers_text = makeKeysWords(Object.keys(table_data[0]), series1.name, series2.name);
+        const headers_text = makeKeysWords(Object.keys(table_data[0]), series1.shortname, series2.shortname);
         if (!table_data.length) {
             throw new Error("ConceptsTable: table_data is empty.");
         }
@@ -889,7 +896,7 @@ function render({ model, el }) {
             .attr("transform", d => `translate(${d.x},0)`);
 
         const color = d3.scaleOrdinal()
-            .domain([series1.name, series2?.name]) // the series labels
+            .domain([series1.shortname, series2?.shortname]) // the series labels
             .range(d3.schemePaired);
 
         header_g.append("rect")
@@ -933,7 +940,7 @@ function render({ model, el }) {
             });
 
         dispatch.on("sort", function(columnData) {
-            console.log('handling dispatch sort call');
+            // console.log('handling dispatch sort call');
             handleSort(columnData);
         });
 
@@ -941,10 +948,11 @@ function render({ model, el }) {
             current_filter = search_term; // Store current filter
             const normalized = search_term.toLowerCase().replace(/[^a-z0-9]/g, "");
 
-            // Update filtered_data instead of manipulating DOM
+            // Update filtered_data
             if (normalized === "") {
                 filtered_data = [...table_data]; // Show all data
             } else {
+                // TODO: clear selected row here
                 filtered_data = table_data.filter(d => {
                     const code = d.concept_code.toLowerCase();
                     const name = d.concept_name.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -1093,8 +1101,9 @@ function render({ model, el }) {
         let selectedRows = new Set();
 
         // clear selections for filtered-out rows
+        // TODO: simplify this function so that the selection is removed before the data is hidden
         function clearHiddenSelections(visibleData) {
-            const visibleRowIds = new Set(visibleData.map(d => d.id || d.name || JSON.stringify(d)));
+            const visibleRowIds = new Set(visibleData.map(d => d.id || d.shortname || JSON.stringify(d)));
 
             // Find selected rows that are no longer visible
             const hiddenSelectedRows = [...selectedRows].filter(rowId => !visibleRowIds.has(rowId));
@@ -1108,21 +1117,6 @@ function render({ model, el }) {
             if (hiddenSelectedRows.length > 0) {
                 rows_g.selectAll("g").classed("selected", false);
                 rows_g.selectAll(".row-border").remove();
-
-                // Re-apply selection class and borders only to visible selected rows
-                rows_g.selectAll("g").each(function(d) {
-                    const rowId = d.id || d.name || JSON.stringify(d);
-                    if (selectedRows.has(rowId)) {
-                        d3.select(this).classed("selected", true);
-                        // Re-add border for visible selected rows
-                        d3.select(this).append("rect")
-                            .attr("class", "row-border")
-                            .attr("x", 0)
-                            .attr("y", 0)
-                            .attr("width", total_table_width)
-                            .attr("height", row_height);
-                    }
-                });
             }
         }
 
@@ -1150,7 +1144,7 @@ function render({ model, el }) {
             row.attr("cursor", "pointer")
                 .on("click", function(event, row_data) {
                     // Get a unique identifier for this row (adjust based on your data structure)
-                    const rowId = row_data.id || row_data.name || JSON.stringify(row_data);
+                    const rowId = row_data.id || row_data.shortname || JSON.stringify(row_data);
 
                     // Check if this row is already selected
                     if (selectedRows.has(rowId)) {
@@ -1301,7 +1295,7 @@ function render({ model, el }) {
                                     .attr("y", innerY)
                                     .attr("width", Math.abs(barScale(row_data.difference_in_prevalence) - zeroX))
                                     .attr("height", innerH)
-                                    .attr("fill", row_data.difference_in_prevalence < 0 ? color(series2.name) : color(series1.name))
+                                    .attr("fill", row_data.difference_in_prevalence < 0 ? color(series2.shortname) : color(series1.shortname))
                                     .on("mouseover", function (event, d, ) {
                                         // console.log('d = ', d);
                                         // which prevalence is higher?
@@ -1309,9 +1303,9 @@ function render({ model, el }) {
                                         // get the name of the series with the higher prevalence
                                         let highest_series_name = "";
                                         if(highest_prevalence === 1)
-                                            highest_series_name = series1.name
+                                            highest_series_name = series1.shortname
                                         else if (highest_prevalence === 2)
-                                            highest_series_name = series2.name;
+                                            highest_series_name = series2.shortname;
 
                                         // tooltip call
                                         tooltipDispatcher.call("show", null, {
@@ -1433,8 +1427,8 @@ function render({ model, el }) {
     // concepts row
     const concepts_row = vis_container.append('div').attr('class', 'row-container concepts-row');
     const div_concepts_table_container = concepts_row.append('div').attr('class', 'col-container');
-    const div_concept_dragbar = concepts_row.append('div').attr('class', 'col-container dragbar');
-    const div_concept_detail_container = concepts_row.append('div').attr('class', 'col-container');
+    // const div_concept_dragbar = concepts_row.append('div').attr('class', 'col-container dragbar');
+    // const div_concept_detail_container = concepts_row.append('div').attr('class', 'col-container');
 
     // concepts controls row
     const div_concepts_ctrl = div_concepts_table_container.append('div')
@@ -1450,26 +1444,32 @@ function render({ model, el }) {
 
     // <editor-fold desc="---------- INSERT THE VISUALIZATIONS ----------">
 
+    const cohort2_exists = dataEntityExists(cohort2_stats); // assumption: if this exists, the rest of the cohort 2 data also exists
+
     // summary statistics
-    SummaryStatistics(div_cohort_summary, {data: cohort1_stats, name: cohort1_name},
-        {series2: {data: cohort2_stats, name: cohort2_name}});
+    SummaryStatistics(div_cohort_summary, {data: cohort1_stats, meta: cohort1_meta, shortname: cohort1_shortname},
+        {series2: {data: cohort2_stats, meta: cohort2_meta, shortname: cohort2_shortname}});
 
     // draw the gender barchart
+    let series2_data = cohort2_exists ?
+        {data: gender_dist2, shortname: cohort2_shortname, total_count: cohort2_stats[0].total_count} : {};
     div_gender.append(() =>
-        VerticalBarChart({data: gender_dist1, name: cohort1_name},
-            {series2: {data: gender_dist2, name: cohort2_name}, dimensions: {xlabel: 'Gender'}})
+        VerticalBarChart({data: gender_dist1, shortname: cohort1_shortname, total_count: cohort1_stats[0].total_count},
+            {series2: series2_data, dimensions: {xlabel: 'gender'}})
     );
 
-    // draw the race barchart
+    series2_data = cohort2_exists ?
+        {data: race_stats2, shortname: cohort2_shortname, total_count: cohort2_stats[0].total_count} : {};
     div_race.append(() =>
-        VerticalBarChart({data: race_stats1, name: cohort1_name},
-            {series2: {data: race_stats2, name: cohort2_name}, dimensions: {xlabel: 'Race'}})
+        VerticalBarChart({data: race_stats1, shortname: cohort1_shortname, total_count: cohort1_stats[0].total_count},
+            {series2: series2_data, dimensions: {xlabel: 'race'}})
     );
 
-    // draw the age barchart
+    series2_data = cohort2_exists ?
+        {data: age_dist2, shortname: cohort2_shortname, total_count: cohort2_stats[0].total_count} : {};
     div_age.append(() =>
-        VerticalBarChart({data: age_dist1, name: cohort1_name},
-            {series2: {data: age_dist2, name: cohort2_name}, dimensions: {xlabel: 'Age'}})
+        VerticalBarChart({data: age_dist1, shortname: cohort1_shortname, total_count: cohort1_stats[0].total_count},
+            {series2: series2_data, dimensions: {xlabel: 'age'}})
     );
 
     // draw the concepts table search box
@@ -1477,7 +1477,7 @@ function render({ model, el }) {
         SearchBox(conceptsTableDispatcher, {label: 'Filter concept code or name'})
     );
 
-    const default_prevalence_dp = 6;
+    const default_prevalence_dp = 3;
     div_concepts_ctrl.append(() =>
         SpinnerBox(conceptsTableDispatcher, {label: 'Prev dp'})
     );
@@ -1486,13 +1486,13 @@ function render({ model, el }) {
     if(Object.keys(concepts2).length === 0) {
         // draw the concepts table
         div_concepts_table.append(() =>
-            ConceptsTable({data: concepts1, name: cohort1_name}, conceptsTableDispatcher)
+            ConceptsTable({data: concepts1, shortname: cohort1_shortname}, conceptsTableDispatcher)
         );
     }
     else{
         div_concepts_table.append(() =>
-            ConceptsTable({data: concepts1, name: cohort1_name}, conceptsTableDispatcher,
-                {series2: {data: concepts2, name: cohort2_name}})
+            ConceptsTable({data: concepts1, shortname: cohort1_shortname}, conceptsTableDispatcher,
+                {series2: {data: concepts2, shortname: cohort2_shortname}})
         );
     }
 

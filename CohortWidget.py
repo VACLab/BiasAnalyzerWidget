@@ -23,8 +23,8 @@ class CohortWidget(anywidget.AnyWidget):
             self,
             cohort1=None,
             cohort2=None,
-            cohort1_name='study cohort',
-            cohort2_name='baseline cohort',
+            cohort1_shortname='study cohort',
+            cohort2_shortname='baseline cohort',
             **kwargs
     ):
         # Determine if developer kwargs were passed
@@ -41,19 +41,23 @@ class CohortWidget(anywidget.AnyWidget):
         # Regular end-user parameters
         self._cohort1 = cohort1
         self._cohort2 = cohort2
-        self._cohort1_name = cohort1_name
-        self._cohort2_name = cohort2_name
+        self._cohort1_shortname = cohort1_shortname
+        self._cohort2_shortname = cohort2_shortname
 
         # Store developer parameters in attributes
+        self._cohort1_meta = kwargs.get('cohort1_meta')
         self._cohort1_stats = kwargs.get('cohort1_stats')
         self._concepts1 = kwargs.get('concepts1')
         self._race_stats1 = kwargs.get('race_stats1')
+        self._ethnicity_stats1 = kwargs.get('ethnicity_stats1')
         self._gender_dist1 = kwargs.get('gender_dist1')
         self._age_dist1 = kwargs.get('age_dist1')
 
+        self._cohort2_meta = kwargs.get('cohort2_meta')
         self._cohort2_stats = kwargs.get('cohort2_stats')
         self._concepts2 = kwargs.get('concepts2')
         self._race_stats2 = kwargs.get('race_stats2')
+        self._ethnicity_stats2 = kwargs.get('ethnicity_stats2')
         self._gender_dist2 = kwargs.get('gender_dist2')
         self._age_dist2 = kwargs.get('age_dist2')
 
@@ -81,53 +85,68 @@ class CohortWidget(anywidget.AnyWidget):
 
     def init_widget(self):
         # The reason for converting to df is to do a little bit of data manipulation.
+        # TODO: Remove the need to convert data to dataframes, then delete this code
         if not self.is_json_mode:
+            df_cohort1_meta = self.create_dataframe([self._cohort1.get_metadata()])
             df_cohort1_stats = self.create_dataframe(self._cohort1.get_stats())
             # get_concept_stats(concept_type='condition_occurrence', filter_count=0, vocab=None,
             # include_hierarchy=False)
             df_concepts1 = self.create_dataframe(self._cohort1.get_concept_stats(
                 concept_type='condition_occurrence', include_hierarchy=True))
             df_race_stats1 = self.create_dataframe(self._cohort1.get_stats('race'))
+            df_ethnicity_stats1 = self.create_dataframe(self._cohort1.get_stats('ethnicity'))
             df_gender_dist1 = self.create_dataframe(self._cohort1.get_distributions('gender'))
             df_age_dist1 = self.create_dataframe(self._cohort1.get_distributions('age'))
             if self._cohort2 is not None:
+                df_cohort2_meta = self.create_dataframe([self._cohort2.get_metadata()])
                 df_cohort2_stats = self.create_dataframe(self._cohort2.get_stats())
                 df_concepts2 = self.create_dataframe(self._cohort2.get_concept_stats(
                     concept_type='condition_occurrence', include_hierarchy=True))
                 df_race_stats2 = self.create_dataframe(self._cohort2.get_stats('race'))
+                df_ethnicity_stats2 = self.create_dataframe(self._cohort2.get_stats('ethnicity'))
                 df_gender_dist2 = self.create_dataframe(self._cohort2.get_distributions('gender'))
                 df_age_dist2 = self.create_dataframe(self._cohort2.get_distributions('age'))
             else:
+                df_cohort2_meta = self.create_dataframe(None)
                 df_cohort2_stats = self.create_dataframe(None)
                 df_concepts2 = self.create_dataframe(None)
                 df_race_stats2 = self.create_dataframe(None)
+                df_ethnicity_stats2 = self.create_dataframe(None)
                 df_gender_dist2 = self.create_dataframe(None)
                 df_age_dist2 = self.create_dataframe(None)
         else:
+            df_cohort1_meta = self.create_dataframe([self._cohort1_meta])
             df_cohort1_stats = self.create_dataframe(self._cohort1_stats)
             df_concepts1 = self.create_dataframe(self._concepts1)
             df_race_stats1 = self.create_dataframe(self._race_stats1)
+            df_ethnicity_stats1 = self.create_dataframe(self._ethnicity_stats1)
             df_gender_dist1 = self.create_dataframe(self._gender_dist1)
             df_age_dist1 = self.create_dataframe(self._age_dist1)
 
+            df_cohort2_meta = self.create_dataframe([self._cohort2_meta])
             df_cohort2_stats = self.create_dataframe(self._cohort2_stats)
             df_concepts2 = self.create_dataframe(self._concepts2)
             df_race_stats2 = self.create_dataframe(self._race_stats2)
+            df_ethnicity_stats2 = self.create_dataframe(self._ethnicity_stats2)
             df_gender_dist2 = self.create_dataframe(self._gender_dist2)
             df_age_dist2 = self.create_dataframe(self._age_dist2)
 
         # rename columns so that they can be passed to functions
+        # TODO: Move this to javascript
         df_race_stats1.rename(columns={'race': 'category', 'race_count': 'value'}, inplace=True)
+        df_race_stats1.rename(columns={'ethnicity': 'category', 'ethnicity_count': 'value'}, inplace=True)
         df_gender_dist1.rename(columns={'gender': 'category', 'gender_count': 'value'}, inplace=True)
         df_age_dist1.rename(columns={'age_bin': 'category', 'bin_count': 'value'}, inplace=True)
 
         if not df_race_stats2.empty:
             df_race_stats2.rename(columns={'race': 'category', 'race_count': 'value'}, inplace=True)
+        if not df_ethnicity_stats2.empty:
+            df_ethnicity_stats2.rename(columns={'ethnicity': 'category', 'ethnicity_count': 'value'}, inplace=True)
         if not df_gender_dist2.empty:
             df_gender_dist2.rename(columns={'gender': 'category', 'gender_count': 'value'}, inplace=True)
         if not df_age_dist2.empty:
             df_age_dist2.rename(columns={'age_bin': 'category', 'bin_count': 'value'}, inplace=True)
-        # print(df_race_stats1)
+        print(df_ethnicity_stats1)
 
         if not df_concepts2.empty:
             # print(df_concepts2)
@@ -138,29 +157,38 @@ class CohortWidget(anywidget.AnyWidget):
             # print(df_concepts2)
 
         # Give data to traitlets as lists of dictionaries.
-
+        # TODO: After moving data manipulation to Javascript and deleting conversion to dataframes, change this so
+        #       that it is not trying to pass a dataframe, but JSON instead (I think!)
+        self.create_trait('_cohort1_meta', traitlets.List(traitlets.Dict()),
+                          df_cohort1_meta.to_dict(orient='records'))
         self.create_trait('_cohort1_stats', traitlets.List(traitlets.Dict()),
                           df_cohort1_stats.to_dict(orient='records'))
         self.create_trait('_concepts1', traitlets.List(traitlets.Dict()),
                           df_concepts1.to_dict(orient='records'))
         self.create_trait('_race_stats1', traitlets.List(traitlets.Dict()),
                           df_race_stats1.to_dict(orient='records'))
+        self.create_trait('_ethnicity_stats1', traitlets.List(traitlets.Dict()),
+                          df_ethnicity_stats1.to_dict(orient='records'))
         self.create_trait('_gender_dist1', traitlets.List(traitlets.Dict()),
                           df_gender_dist1.to_dict(orient='records'))
         self.create_trait('_age_dist1', traitlets.List(traitlets.Dict()),
                           df_age_dist1.to_dict(orient='records'))
-        self.create_trait('_cohort1_name', traitlets.Unicode(), self._cohort1_name)
+        self.create_trait('_cohort1_shortname', traitlets.Unicode(), self._cohort1_shortname)
 
+        self.create_trait('_cohort2_meta', traitlets.List(traitlets.Dict()),
+                          df_cohort2_meta.to_dict(orient='records'))
         self.create_trait('_cohort2_stats', traitlets.List(traitlets.Dict()),
                           df_cohort2_stats.to_dict(orient='records'))
         self.create_trait('_concepts2', traitlets.List(traitlets.Dict()),
                           df_concepts2.to_dict(orient='records'))
         self.create_trait('_race_stats2', traitlets.List(traitlets.Dict()),
                           df_race_stats2.to_dict(orient='records'))
-        self.create_trait('_gender_dist2', traitlets.List(traitlets.Dict()),
+        self.create_trait('_ethnicity_stats2', traitlets.List(traitlets.Dict()),
+                          df_race_stats2.to_dict(orient='records'))
+        self.create_trait('_ethnicity_dist2', traitlets.List(traitlets.Dict()),
                           df_gender_dist2.to_dict(orient='records'))
         self.create_trait('_age_dist2', traitlets.List(traitlets.Dict()),
                           df_age_dist2.to_dict(orient='records'))
-        self.create_trait('_cohort2_name', traitlets.Unicode(), self._cohort2_name)
+        self.create_trait('_cohort2_shortname', traitlets.Unicode(), self._cohort2_shortname)
 
         # print("initialization completed")
