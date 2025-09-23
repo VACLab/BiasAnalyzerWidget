@@ -127,6 +127,24 @@ function render({ model, el }) {
         return typeof str === 'string' && str.trim().length === 0;
     }
 
+    function renameKeys(data, oldKeys, newKeys) {
+        if (oldKeys.length !== newKeys.length) {
+            throw new Error("oldKeys and newKeys must be the same length");
+        }
+
+        return data.map(item => {
+            const changed_data = { ...item };
+            oldKeys.forEach((oldKey, index) => {
+                const newKey = newKeys[index];
+                if (oldKey in changed_data) {
+                    changed_data[newKey] = changed_data[oldKey];
+                    delete changed_data[oldKey];
+                }
+            });
+            return changed_data;
+        });
+    }
+
     function toLabel(key){
         return key.split('_')
             .map(part => part.charAt(0).toUpperCase() + part.slice(1))
@@ -166,9 +184,12 @@ function render({ model, el }) {
     // <editor-fold desc="---------- DEFINE DATA ----------">
 
     var cohort1_meta = model.get('_cohort1_meta');
+    console.log(cohort1_meta);
+
     var cohort1_stats = model.get('_cohort1_stats');
     var concepts1 = model.get('_concepts1');
     var race_stats1 = model.get('_race_stats1');
+    var ethnicity_stats1 = model.get('_ethnicity_stats1');
     var gender_dist1 = model.get('_gender_dist1');
     var age_dist1 = model.get('_age_dist1');
     var cohort1_shortname = model.get('_cohort1_shortname');
@@ -177,9 +198,29 @@ function render({ model, el }) {
     var cohort2_stats = model.get('_cohort2_stats');
     var concepts2 = model.get('_concepts2');
     var race_stats2 = model.get('_race_stats2');
+    var ethnicity_stats2 = model.get('_ethnicity_stats2');
     var gender_dist2 = model.get('_gender_dist2');
     var age_dist2 = model.get('_age_dist2');
     var cohort2_shortname = model.get('_cohort2_shortname');
+
+    race_stats1 = renameKeys(race_stats1, ['race', 'race_count'], ['category', 'value']);
+    ethnicity_stats1 = renameKeys(ethnicity_stats1, ['ethnicity', 'ethnicity_count'], ['category', 'value']);
+    gender_dist1 = renameKeys(gender_dist1, ['gender', 'gender_count'], ['category', 'value']);
+    age_dist1 = renameKeys(age_dist1, ['age_bin', 'bin_count'], ['category', 'value']);
+
+    if(dataEntityExists(race_stats2))
+        race_stats2 = renameKeys(race_stats2, ['race', 'race_count'], ['category', 'value']);
+    if(dataEntityExists(ethnicity_stats2))
+        ethnicity_stats2 = renameKeys(ethnicity_stats2, ['ethnicity', 'ethnicity_count'], ['category', 'value']);
+    if(dataEntityExists(gender_dist2))
+        gender_dist1 = renameKeys(gender_dist2, ['gender', 'gender_count'], ['category', 'value']);
+    if(dataEntityExists(age_dist2))
+        age_dist2 = renameKeys(age_dist2, ['age_bin', 'bin_count'], ['category', 'value']);
+
+    if(dataEntityExists(concepts2)) {
+        concepts1 = renameKeys(concepts1, ['count_in_cohort', 'prevalence'], ['cohort1_count', 'cohort1_prevalence']);
+        concepts2 = renameKeys(concepts2, ['count_in_cohort', 'prevalence'], ['cohort2_count', 'cohort2_prevalence']);
+    }
 
     // </editor-fold>
 
@@ -486,6 +527,7 @@ function render({ model, el }) {
         } = {}
     ) {
         const series2_exists = dataEntityExists(series2);
+
         const combinedData = series2_exists
             ? series1.data.concat(series2.data)
             : series1.data;
@@ -493,7 +535,7 @@ function render({ model, el }) {
         xlabel = toLabel(xlabel);
 
         const categories = Array.from(new Set(combinedData.map(d => d.category)));
-        let ylabel = show_percentage ? 'Percentage' : 'Patients Count';
+        let ylabel = show_percentage ? 'Proportion' : 'Patients Count';
 
         // handles the vertical bar chart
         const toggle_view_dispatcher = d3.dispatch("toggle_view"); // handles toggling between value and probability
@@ -508,7 +550,7 @@ function render({ model, el }) {
         svg.append("g")
             .attr("transform", `translate(${width - margin.right - 160}, ${10})`)
             .append(() => ToggleSwitch(toggle_view_dispatcher, {
-                label: "Show Percentage", initial_state: show_percentage
+                label: "Show Proportion", initial_state: show_percentage
             }));
 
         // X scale
@@ -564,6 +606,7 @@ function render({ model, el }) {
             return yScale;
         }
 
+        // chart title
         let yScale = drawYAxis();
         if (title === '' && xlabel !== '') title = xlabel + ' Distribution';
         svg.append('text')
@@ -602,8 +645,7 @@ function render({ model, el }) {
                     .attr('width', series2_exists ? half : bw)
                     .attr('y', d => yScale(show_percentage ? d.probability : +d.value))
                     .attr('height', d => height - margin.bottom - yScale(show_percentage ? d.probability : +d.value))
-                    .attr('fill', d => color(series.shortname)),
-                update => update.transition().duration(500)
+                    .attr('fill', d => color(series.shortname)), update => update.transition().duration(500)
                     .attr('y', d => yScale(show_percentage ? d.probability : +d.value))
                     .attr('height', d => height - margin.bottom - yScale(show_percentage ? d.probability : +d.value))
             );
@@ -644,7 +686,7 @@ function render({ model, el }) {
         // Dispatch listener to redraw y-axis and bars
         toggle_view_dispatcher.on("toggle_view", function(state) {
             show_percentage = state;
-            ylabel = show_percentage ? 'Percentage' : 'Patients Count';
+            ylabel = show_percentage ? 'Proportion' : 'Patients Count';
             yScale = drawYAxis();
             drawSeriesBars(svg, series1, 1, 'bar', yScale);
             if (series2_exists) {
@@ -1422,6 +1464,7 @@ function render({ model, el }) {
     const demographics_row = vis_container.append('div').attr('class', 'row-container');
     const div_gender = demographics_row.append('div').attr('class', 'col-container');
     const div_race = demographics_row.append('div').attr('class', 'col-container');
+    // const div_ethnicity = demographics_row.append('div').attr('class', 'col-container');
     const div_age = demographics_row.append('div').attr('class', 'col-container');
 
     // concepts row
@@ -1465,6 +1508,13 @@ function render({ model, el }) {
             {series2: series2_data, dimensions: {xlabel: 'race'}})
     );
 
+    // series2_data = cohort2_exists ?
+    //     {data: ethnicity_stats2, shortname: cohort2_shortname, total_count: cohort2_stats[0].total_count} : {};
+    // div_ethnicity.append(() =>
+    //     VerticalBarChart({data: ethnicity_stats1, shortname: cohort1_shortname, total_count: cohort1_stats[0].total_count},
+    //         {series2: series2_data, dimensions: {xlabel: 'ethnicity'}})
+    // );
+
     series2_data = cohort2_exists ?
         {data: age_dist2, shortname: cohort2_shortname, total_count: cohort2_stats[0].total_count} : {};
     div_age.append(() =>
@@ -1483,7 +1533,7 @@ function render({ model, el }) {
     );
 
     // if there is only one set of concepts, draw a single cohort concepts table
-    if(Object.keys(concepts2).length === 0) {
+    if(!dataEntityExists(concepts2)) {
         // draw the concepts table
         div_concepts_table.append(() =>
             ConceptsTable({data: concepts1, shortname: cohort1_shortname}, conceptsTableDispatcher)
