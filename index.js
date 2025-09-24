@@ -1387,33 +1387,63 @@ function render({ model, el }) {
                                     .attr("stroke-width", 1)
                                     .attr("stroke-dasharray", "3,3");
 
-                                // Bar
-                                g.append("rect")
-                                    .attr("x", Math.min(zeroX, barScale(row_data.difference_in_prevalence)))
-                                    .attr("y", innerY)
-                                    .attr("width", Math.abs(barScale(row_data.difference_in_prevalence) - zeroX))
-                                    .attr("height", innerH)
-                                    .attr("fill", row_data.difference_in_prevalence < 0 ? color(series2.shortname) : color(series1.shortname))
-                                    .on("mouseover", function (event, d, ) {
-                                        // console.log('d = ', d);
-                                        // which prevalence is higher?
-                                        const highest_prevalence = getHighestPrevalenceSeriesName(d);
-                                        // get the name of the series with the higher prevalence
-                                        let highest_series_name = "";
-                                        if(highest_prevalence === 1)
-                                            highest_series_name = series1.shortname
-                                        else if (highest_prevalence === 2)
-                                            highest_series_name = series2.shortname;
+                                const diff_val = row_data.difference_in_prevalence;
+                                const abs_diff = Math.abs(diff_val);
 
-                                        // tooltip call
-                                        tooltipDispatcher.call("show", null, {
-                                            content: getTooltipContent(d, highest_series_name),
-                                            event: event
+                                // Bar (only if difference is significant enough to be visible)
+                                if (abs_diff >= 0.1) {
+                                    g.append("rect")
+                                        .attr("x", Math.min(zeroX, barScale(diff_val)))
+                                        .attr("y", innerY)
+                                        .attr("width", Math.abs(barScale(diff_val) - zeroX))
+                                        .attr("height", innerH)
+                                        .attr("fill", diff_val < 0 ? color(series2.shortname) : color(series1.shortname))
+                                        .on("mouseover", function (event, d) {
+                                            const highest_prevalence = getHighestPrevalenceSeriesName(d);
+                                            let highest_series_name = "";
+                                            if(highest_prevalence === 1)
+                                                highest_series_name = series1.shortname
+                                            else if (highest_prevalence === 2)
+                                                highest_series_name = series2.shortname;
+
+                                            tooltipDispatcher.call("show", null, {
+                                                content: getTooltipContent(d, highest_series_name),
+                                                event: event
+                                            });
+                                        })
+                                        .on("mouseout", function () {
+                                            tooltipDispatcher.call("hide");
                                         });
-                                    })
-                                    .on("mouseout", function () {
-                                        tooltipDispatcher.call("hide");
-                                    });
+                                }
+
+                                // Invisible hover rectangle for small/zero values
+                                if (abs_diff < 0.1) {
+                                    const hover_width = barScale(0.2) - barScale(0); // Width for 0.2 difference
+                                    g.append("rect")
+                                        .attr("x", zeroX - hover_width/2)
+                                        .attr("y", innerY)
+                                        .attr("width", hover_width)
+                                        .attr("height", innerH)
+                                        .attr("fill", "transparent")
+                                        .attr("opacity", 0)
+                                        .style("cursor", "pointer")
+                                        .on("mouseover", function (event, d) {
+                                            const highest_prevalence = getHighestPrevalenceSeriesName(d);
+                                            let highest_series_name = "";
+                                            if(highest_prevalence === 1)
+                                                highest_series_name = series1.shortname
+                                            else if (highest_prevalence === 2)
+                                                highest_series_name = series2.shortname;
+
+                                            tooltipDispatcher.call("show", null, {
+                                                content: getTooltipContent(d, highest_series_name),
+                                                event: event
+                                            });
+                                        })
+                                        .on("mouseout", function () {
+                                            tooltipDispatcher.call("hide");
+                                        });
+                                }
 
                                 // Text label - positioned based on value sign
                                 const textX = row_data.difference_in_prevalence >= 0 ?
