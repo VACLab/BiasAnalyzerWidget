@@ -184,8 +184,6 @@ function render({ model, el }) {
     // <editor-fold desc="---------- DEFINE DATA ----------">
 
     var cohort1_meta = model.get('_cohort1_meta');
-    console.log(cohort1_meta);
-
     var cohort1_stats = model.get('_cohort1_stats');
     var concepts1 = model.get('_concepts1');
     var race_stats1 = model.get('_race_stats1');
@@ -447,17 +445,28 @@ function render({ model, el }) {
         ];
 
         function drawSeriesSummary(parentSel, cohort) {
+
+            const title = cohort.meta.name.trim();
+            const desc = cohort.meta.description.trim();
+
+            let h1;
+            if (title !== "") {
+                h1 = parentSel.append('h1')
+                    .style('font-size', '14px')
+                    .text(title);
+            }
+
+            if (desc !== "") {
+                h1.append('text')
+                    .style('font-size', '12px')
+                    .html("<br>" + desc);
+            }
+
             // Create a container for this cohort
             const cohortBlock = parentSel.append('div')
                 .style('display', 'flex')
                 .style('flex-direction', 'column')
                 .style('gap', '12px');
-
-            // Cohort name in bold
-            cohortBlock.append('div')
-                .text(cohort.shortname)
-                .style('font-weight', 'bold')
-                .style('font-size', '12px');
 
             // Columns container: horizontal layout
             const colContainer = cohortBlock.append('div')
@@ -495,11 +504,8 @@ function render({ model, el }) {
             });
         }
 
-        // Draw first series
-        if (!series2.data || series2.data.length === 0)
-            series1.shortname = '';
+        // draw first series
         drawSeriesSummary(container, series1);
-
         // Draw second series below the first if it has data
         if (series2.data && series2.data.length > 0) {
             drawSeriesSummary(container, series2);
@@ -706,7 +712,8 @@ function render({ model, el }) {
         series1, dispatch,
         {
             series2 = { data: null, shortname: "baseline" },
-            dimensions = { height: 432, row_height: 30 }
+            dimensions = { height: 432, row_height: 30 },
+            pageSize = 15  // Fixed page size
         } = {}
     ){
         let full_data = [];       // original dataset
@@ -716,13 +723,11 @@ function render({ model, el }) {
         let current_filter = ""; // Track current filter state
         let filtered_data; // Will be initialized after table_data
 
+        // Add paging variables
+        let current_page = 0;
+        let page_size = pageSize;
 
-        // function getTooltipContent(d, series, xlabel) {
-        //     const patient_count_text = `${d.value || 0}/${series.total_count} (${d3.format(".0%")(d.probability || 0)})`;
-        //     return `<strong>${series.name}: ${xlabel + ': ' || ''} ${d.category}</strong><hr>Count: ${patient_count_text}`;
-        // }
-
-        function getTooltipContent(d, series_name){
+        function getTooltipContent(d, series, series_name){
             const heading = `<strong>Concept: ${d.concept_code}</strong><br>(${d.concept_name})<hr>`;
             let msg = ` (no difference)`;
             if(series_name !== "")
@@ -761,6 +766,35 @@ function render({ model, el }) {
                 return rearrangedItem;
             });
             return mergedList;
+        }
+
+        // Add pagination helper functions
+        function getTotalPages() {
+            return Math.ceil(filtered_data.length / page_size);
+        }
+
+        function getCurrentPageData() {
+            const start = current_page * page_size;
+            const end = start + page_size;
+            return filtered_data.slice(start, end);
+        }
+
+        function updatePaginationControls() {
+            const total_pages = getTotalPages();
+            const current_display = current_page + 1;
+
+            pagination_container.select('.page-info')
+                .text(`${filtered_data.length} rows`);
+
+            pagination_container.select('.prev-btn')
+                .property('disabled', current_page === 0);
+
+            pagination_container.select('.next-btn')
+                .property('disabled', current_page >= total_pages - 1);
+
+            // Update page input and total pages display
+            nav_container.select('input').property('value', current_display);
+            nav_container.select('.total-pages').text(`of ${total_pages}`);
         }
 
         // <editor-fold desc="---------- EVENT HANDLER FUNCTIONS ----------">
@@ -833,6 +867,9 @@ function render({ model, el }) {
                 filtered_data = [...table_data];
             }
 
+            // Reset to first page after sort
+            current_page = 0;
+
             // Re-render the table body with sorted and filtered data
             updateTableBody();
         }
@@ -870,12 +907,9 @@ function render({ model, el }) {
         const text_offset_x = 10;
         const { height, row_height } = dimensions;
 
-        // === container with scroll ===
+        // === container - CHANGED: Remove scroll, set fixed height ===
         const container = d3.create("div")
             .style("width", "100%")
-            .style("max-height", height + "px")
-            .style("overflow", "auto")
-            .style("position", "relative")
             .style("border", "1px solid #ccc")
             .style("font-family", "sans-serif");
 
@@ -924,10 +958,7 @@ function render({ model, el }) {
         const headers_svg = container.append("svg")
             .attr("width", total_table_width)
             .attr("height", row_height)
-            .style("position", "sticky")
-            .style("top", 0)
-            .style("background", "white")
-            .style("z-index", 1);
+            .style("background", "white");
 
         const headers_g = headers_svg.append("g");
 
@@ -1004,6 +1035,9 @@ function render({ model, el }) {
                 clearHiddenSelections(filtered_data);
             }
 
+            // Reset to first page after filter
+            current_page = 0;
+
             // Re-render with filtered data
             updateTableBody();
         });
@@ -1072,27 +1106,28 @@ function render({ model, el }) {
             // handleChangeDP(dp_value);
 
             // function handleChangeDP(dp_value) {
-                // Parse and validate the decimal places value
-                let newDP = parseInt(dp_value);
-                if (isNaN(newDP) || newDP < 0 || newDP > 16) {
-                    newDP = 0;
-                }
+            // Parse and validate the decimal places value
+            let newDP = parseInt(dp_value);
+            if (isNaN(newDP) || newDP < 0 || newDP > 16) {
+                newDP = 0;
+            }
 
-                // Update the prevalence_dp variable (move it outside renderTableCells to module scope)
-                prevalence_dp = newDP;
+            // Update the prevalence_dp variable (move it outside renderTableCells to module scope)
+            prevalence_dp = newDP;
 
-                // Clear existing table body content
-                rows_g.selectAll(".row").remove();
+            // Clear existing table body content
+            rows_g.selectAll(".row").remove();
 
-                // Re-render the table with new decimal places
-                const row = rows_g.selectAll(".row")
-                    .data(table_data)
-                    .enter()
-                    .append("g")
-                    .attr("class", "row")
-                    .attr("transform", (d, i) => `translate(0, ${i * row_height})`);
+            // Re-render the table with new decimal places
+            const page_data = getCurrentPageData();
+            const row = rows_g.selectAll(".row")
+                .data(page_data)
+                .enter()
+                .append("g")
+                .attr("class", "row")
+                .attr("transform", (d, i) => `translate(0, ${i * row_height})`);
 
-                renderTableCells(row);
+            renderTableCells(row);
             // }
         });
 
@@ -1137,7 +1172,8 @@ function render({ model, el }) {
                 })
             );
 
-        // === BODY ===
+        // === BODY - CHANGED: Fixed height based on page size ===
+        const body_height = page_size * row_height;
 
         // track selected rows
         let selectedRows = new Set();
@@ -1164,7 +1200,7 @@ function render({ model, el }) {
 
         const body_svg = container.append("svg")
             .attr("width", total_table_width)
-            .attr("height", filtered_data.length * row_height);
+            .attr("height", body_height);
 
         const rows_g = body_svg.append("g");
 
@@ -1258,6 +1294,16 @@ function render({ model, el }) {
                         .text(row_data => {
                             return getPrevalenceValue(row_data[col.field], col, row_data);
                         });
+                    // TODO: for prevalence column only, show fraction (e.g., 404/414)
+                    // .on("mouseover", function (event, d ) {
+                    //     tooltipDispatcher.call("show", null, {
+                    //         content: '',
+                    //         event: event
+                    //     });
+                    // })
+                    // .on("mouseout", function () {
+                    //     tooltipDispatcher.call("hide");
+                    // });
                 } else {
 
                     function getHighestPrevalenceSeriesName(d) {
@@ -1276,6 +1322,16 @@ function render({ model, el }) {
                                 .text(row_data => {
                                     return getPrevalenceValue(row_data[col.field], col, row_data);
                                 });
+                            // TODO: for prevalence columns only, show fraction (e.g., 404/414)
+                            // .on("mouseover", function (event, d ) {
+                            //     tooltipDispatcher.call("show", null, {
+                            //         content: '',
+                            //         event: event
+                            //     });
+                            // })
+                            // .on("mouseout", function () {
+                            //     tooltipDispatcher.call("hide");
+                            // });
                             break;
 
                         case "bar":
@@ -1391,9 +1447,11 @@ function render({ model, el }) {
         }
 
         function updateTableBody() {
-            // Use filtered_data instead of table_data
+            // CHANGED: Use getCurrentPageData() instead of filtered_data
+            const page_data = getCurrentPageData();
+
             const rows = rows_g.selectAll(".row")
-                .data(filtered_data, d => d.concept_code || Math.random());
+                .data(page_data, d => d.concept_code || Math.random());
 
             // Remove exiting rows
             rows.exit().remove();
@@ -1409,19 +1467,101 @@ function render({ model, el }) {
             // Update positions with transition
             rowsUpdate
                 .transition()
-                .duration(300)
+                .duration(150)
+                .ease(d3.easeQuadOut)
                 .attr("transform", (d, i) => `translate(0, ${i * row_height})`);
 
             // Render cells for new rows only
             renderTableCells(rowsEnter);
 
-            // Update SVG height to match filtered data
-            body_svg.attr("height", filtered_data.length * row_height);
+            // Update pagination controls
+            updatePaginationControls();
         }
 
-        // Initial render - use filtered_data instead of table_data
+        // === ADD PAGINATION CONTROLS ===
+        const pagination_container = container.append("div")
+            .style("padding", "5px 10px")
+            .style("border-top", "1px solid #ccc")
+            .style("background", "#f9f9f9")
+            .style("display", "flex")
+            .style("justify-content", "space-between")
+            .style("align-items", "center")
+            .style("font-size", "12px");
+
+        // Left side - page info
+        pagination_container.append("div")
+            .attr("class", "page-info")
+            .style("color", "#666");
+
+        // Right side - navigation controls
+        const nav_container = pagination_container.append("div")
+            .style("display", "flex")
+            .style("gap", "5px")
+            .style("align-items", "center");
+
+        const prev_btn = nav_container.append("button")
+            .attr("class", "prev-btn")
+            .style("padding", "2px 6px")
+            .style("border", "1px solid #ccc")
+            .style("background", "#fff")
+            .style("cursor", "pointer")
+            .style("font-size", "12px")
+            .text("<")
+            .on("click", function() {
+                if (current_page > 0) {
+                    current_page--;
+                    updateTableBody();
+                }
+            });
+
+        // Add page jump input
+        nav_container.append("span")
+            .style("font-size", "12px")
+            .text("Page");
+
+        const page_input = nav_container.append("input")
+            .attr("type", "number")
+            .attr("min", 1)
+            .style("width", "40px")
+            .style("padding", "2px")
+            .style("border", "1px solid #ccc")
+            .style("text-align", "center")
+            .style("font-size", "12px")
+            .on("change", function() {
+                const page_num = parseInt(this.value);
+                const total_pages = getTotalPages();
+                if (page_num >= 1 && page_num <= total_pages) {
+                    current_page = page_num - 1; // Convert to 0-based index
+                    updateTableBody();
+                } else {
+                    // Reset to current page if invalid
+                    this.value = current_page + 1;
+                }
+            });
+
+        nav_container.append("span")
+            .attr("class", "total-pages")
+            .style("font-size", "12px");
+
+        const next_btn = nav_container.append("button")
+            .attr("class", "next-btn")
+            .style("padding", "2px 6px")
+            .style("border", "1px solid #ccc")
+            .style("background", "#fff")
+            .style("cursor", "pointer")
+            .style("font-size", "12px")
+            .text(">")
+            .on("click", function() {
+                if (current_page < getTotalPages() - 1) {
+                    current_page++;
+                    updateTableBody();
+                }
+            });
+
+        // Initial render - CHANGED: Use getCurrentPageData() instead of filtered_data
+        const initial_page_data = getCurrentPageData();
         const row = rows_g.selectAll(".row")
-            .data(filtered_data)
+            .data(initial_page_data)
             .enter()
             .append("g")
             .attr("class", "row")
@@ -1447,6 +1587,9 @@ function render({ model, el }) {
                 handleSort(prevalenceColumn, true); // Skip toggle for initialization
             }
         }
+
+        // Initialize pagination controls
+        updatePaginationControls();
 
         return container.node();
     }
