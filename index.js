@@ -420,9 +420,7 @@ function render({ model, el }) {
         svg.append("text")
             .attr("x", track_width + 10)
             .attr("y", height / 2 + 4)
-            .text(label)
-            .style("font-size", "12px")
-            .style("font-family", "sans-serif");
+            .text(label);
 
         return svg.node();
     }
@@ -449,17 +447,18 @@ function render({ model, el }) {
             const title = cohort.meta.name.trim();
             const desc = cohort.meta.description.trim();
 
-            let h1;
             if (title !== "") {
-                h1 = parentSel.append('h1')
-                    .style('font-size', '14px')
+                parentSel.append('h1')
+                    .attr('class', 'tight-header')
+                    .style('font-size', '13px')
                     .text(title);
             }
 
             if (desc !== "") {
-                h1.append('text')
-                    .style('font-size', '12px')
-                    .html("<br>" + desc);
+                parentSel.append('h2')
+                    .attr('class', 'tight-header')
+                    .style('font-size', '11px')
+                    .text(desc);
             }
 
             // Create a container for this cohort
@@ -713,7 +712,7 @@ function render({ model, el }) {
         {
             series2 = { data: null, shortname: "baseline" },
             dimensions = { height: 432, row_height: 30 },
-            pageSize = 15  // Fixed page size
+            pageSize = 10  // Fixed page size
         } = {}
     ){
         let full_data = [];       // original dataset
@@ -911,7 +910,6 @@ function render({ model, el }) {
         const container = d3.create("div")
             .style("width", "100%")
             .style("border", "1px solid #ccc")
-            .style("font-family", "sans-serif");
 
         // === HEADERS ===
 
@@ -1515,8 +1513,7 @@ function render({ model, el }) {
             .style("background", "#f9f9f9")
             .style("display", "flex")
             .style("justify-content", "space-between")
-            .style("align-items", "center")
-            .style("font-size", "12px");
+            .style("align-items", "center");
 
         // Left side - page info
         pagination_container.append("div")
@@ -1535,7 +1532,6 @@ function render({ model, el }) {
             .style("border", "1px solid #ccc")
             .style("background", "#fff")
             .style("cursor", "pointer")
-            .style("font-size", "12px")
             .text("<")
             .on("click", function() {
                 if (current_page > 0) {
@@ -1546,7 +1542,6 @@ function render({ model, el }) {
 
         // Add page jump input
         nav_container.append("span")
-            .style("font-size", "12px")
             .text("Page");
 
         const page_input = nav_container.append("input")
@@ -1556,7 +1551,6 @@ function render({ model, el }) {
             .style("padding", "2px")
             .style("border", "1px solid #ccc")
             .style("text-align", "center")
-            .style("font-size", "12px")
             .on("change", function() {
                 const page_num = parseInt(this.value);
                 const total_pages = getTotalPages();
@@ -1570,8 +1564,7 @@ function render({ model, el }) {
             });
 
         nav_container.append("span")
-            .attr("class", "total-pages")
-            .style("font-size", "12px");
+            .attr("class", "total-pages");
 
         const next_btn = nav_container.append("button")
             .attr("class", "next-btn")
@@ -1579,7 +1572,6 @@ function render({ model, el }) {
             .style("border", "1px solid #ccc")
             .style("background", "#fff")
             .style("cursor", "pointer")
-            .style("font-size", "12px")
             .text(">")
             .on("click", function() {
                 if (current_page < getTotalPages() - 1) {
@@ -1628,7 +1620,8 @@ function render({ model, el }) {
 
     // <editor-fold desc="---------- PAGE LAYOUT ----------">
 
-    const vis_container = d3.select(el).append("div").attr('class', 'vis_container');  // overall container
+    // overall container
+    const vis_container = d3.select(el).append("div").attr('class', 'vis-container');
 
     // summary container row
     const div_cohort_summary = vis_container.append('div').attr('class', 'row-container cohort-summary');
