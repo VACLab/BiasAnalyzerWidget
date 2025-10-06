@@ -1,6 +1,6 @@
 import * as d3 from 'https://esm.sh/d3@7';
 import * as Inputs from "https://esm.sh/@observablehq/inputs";
-import * as Plot from "https://esm.sh/@observablehq/plot";
+// import * as Plot from "https://esm.sh/@observablehq/plot";
 
 // function initialize({ model }) {
 //     // Set up shared state or event handlers.

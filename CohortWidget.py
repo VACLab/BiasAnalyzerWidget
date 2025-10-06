@@ -12,16 +12,16 @@ class CohortWidget(anywidget.AnyWidget):
 
     # List of developer-only keys
     _dev_keys = [
-        'cohort1_meta', 'cohort1_stats', 'concepts1', 'race_stats1', 'ethnicity_stats1', 'gender_dist1', 'age_dist1',
-        'cohort2_meta', 'cohort2_stats', 'concepts2', 'race_stats2', 'ethnicity_stats2', 'gender_dist2', 'age_dist2'
+        'cohort1_meta', 'cohort1_stats', 'conditions', 'race_stats1', 'ethnicity_stats1', 'gender_dist1', 'age_dist1',
+        'cohort2_meta', 'cohort2_stats', 'race_stats2', 'ethnicity_stats2', 'gender_dist2', 'age_dist2'
     ]
 
     @staticmethod
     def is_empty(obj):
         return True if obj is None or len(obj) == 0 else False
 
+    # Convert non-JSON-serializable objects to JSON-compatible types
     def make_json_serializable(self, obj):
-        """Convert non-JSON-serializable objects to JSON-compatible types."""
         if isinstance(obj, dict):
             return {key: self.make_json_serializable(value) for key, value in obj.items()}
         elif isinstance(obj, list):
@@ -37,6 +37,7 @@ class CohortWidget(anywidget.AnyWidget):
 
     def __init__(
             self,
+            bias=None,
             cohort1=None,
             cohort2=None,
             cohort1_shortname='study cohort',
@@ -54,7 +55,10 @@ class CohortWidget(anywidget.AnyWidget):
 
         super().__init__()
 
-        # parameters
+        # READ PARAMETERS
+
+        # end-user parameters
+        self._bias = bias  # NOTE: bias does not need to go to javascript, so no traitlet needed
         self._cohort1 = cohort1
         self._cohort2 = cohort2
         self._cohort1_shortname = cohort1_shortname
@@ -63,7 +67,7 @@ class CohortWidget(anywidget.AnyWidget):
         # developer parameters
         self._cohort1_meta = kwargs.get('cohort1_metadata')
         self._cohort1_stats = kwargs.get('cohort1_stats')
-        self._concepts1 = kwargs.get('concepts1')
+        self._conditions = kwargs.get('conditions')
         self._race_stats1 = kwargs.get('race_stats1')
         self._ethnicity_stats1 = kwargs.get('ethnicity_stats1')
         self._gender_dist1 = kwargs.get('gender_dist1')
@@ -71,7 +75,6 @@ class CohortWidget(anywidget.AnyWidget):
 
         self._cohort2_meta = kwargs.get('cohort2_metadata')
         self._cohort2_stats = kwargs.get('cohort2_stats')
-        self._concepts2 = kwargs.get('concepts2')
         self._race_stats2 = kwargs.get('race_stats2')
         self._ethnicity_stats2 = kwargs.get('ethnicity_stats2')
         self._gender_dist2 = kwargs.get('gender_dist2')
@@ -93,16 +96,25 @@ class CohortWidget(anywidget.AnyWidget):
         # Perform actions that require the widget to be fully initialized
         self.init_widget()
 
+    @staticmethod
+    def getConceptsFilterCount(value1, value2):
+        return round(min(value1, value2) * 0.05)
+
+    # TODO: This is where to go through the conditions and isolate interesting concept
+    def findInterestingConditions(self):
+        if self.is_empty(self._cohort2):
+            # Test this and see what it looks like. At the very least, remove duplicates
+            interesting_conditions = self._conditions.get_leaf_nodes(self._conditions)
+        else:
+            interesting_conditions = []
+        return interesting_conditions
+
     def init_widget(self):
-        # ready = False
         # if we are not injecting json, get the datasets
         # we are also serializing so that object fields (e.g., dates) can be passed to javascript
         if not self.is_json_mode:
             self._cohort1_meta = self.make_json_serializable(self._cohort1.metadata)
             self._cohort1_stats = self.make_json_serializable(self._cohort1.get_stats())
-            self._concepts1 = self.make_json_serializable(self._cohort1.get_concept_stats(
-                concept_type='condition_occurrence')[0]['condition_occurrence'])  #, include_hierarchy=True)
-            # self._concepts1 = self.make_json_serializable(self._cohort1.get_concept_stats(concept_type='condition_occurrence')
             self._race_stats1 = self.make_json_serializable(self._cohort1.get_stats('race'))
             self._ethnicity_stats1 = self.make_json_serializable(self._cohort1.get_stats('ethnicity'))
             self._gender_dist1 = self.make_json_serializable(self._cohort1.get_distributions('gender'))
@@ -111,14 +123,15 @@ class CohortWidget(anywidget.AnyWidget):
             if self._cohort2 is not None:
                 self._cohort2_meta = self.make_json_serializable(self._cohort2.metadata)
                 self._cohort2_stats = self.make_json_serializable(self._cohort2.get_stats())
-                self._concepts2 = self.make_json_serializable(self._cohort2.get_concept_stats(
-                    concept_type='condition_occurrence')[0]['condition_occurrence'])  #, include_hierarchy=True)
                 self._race_stats2 = self.make_json_serializable(self._cohort2.get_stats('race'))
                 self._ethnicity_stats2 = self.make_json_serializable(self._cohort2.get_stats('ethnicity'))
                 self._gender_dist2 = self.make_json_serializable(self._cohort2.get_distributions('gender'))
                 self._age_dist2 = self.make_json_serializable(self._cohort2.get_distributions('age'))
-        # else:
-        #     ready = True  # if we are not waiting for data, we are ready straight away
+
+            self._conditions = self.make_json_serializable(self._bias.get_cohorts_concept_stats(
+                [self._cohort1, self._cohort2], concept_type='condition_occurrence',
+                filter_count=self.getConceptsFilterCount(self._cohort1_stats['total_count'],
+                                                    self._cohort2_stats['total_count']))[0]['condition_occurrence'])
 
         # Give data to traitlets, mostly as lists of dictionaries -- exceptions are metadata & shortname
 
@@ -126,8 +139,6 @@ class CohortWidget(anywidget.AnyWidget):
         self.create_trait('_cohort1_meta', t.Dict(), self._cohort1_meta)
         # print(f'self._cohort1_stats = {self._cohort1_stats}')
         self.create_trait('_cohort1_stats', t.List(t.Dict()), self._cohort1_stats)
-        # print(f'self._concepts1 = {self._concepts1}')
-        self.create_trait('_concepts1', t.List(t.Dict()), self._concepts1)
         # print(f'self._race_stats1 = {self._race_stats1}')
         self.create_trait('_race_stats1', t.List(t.Dict()), self._race_stats1)
         # print(f'self._ethnicity_stats1 = {self._ethnicity_stats1}')
@@ -144,8 +155,6 @@ class CohortWidget(anywidget.AnyWidget):
             self.create_trait('_cohort2_meta', t.Dict(), self._cohort2_meta)
             # print(f'self._cohort2_stats = {self._cohort2_stats}')
             self.create_trait('_cohort2_stats', t.List(t.Dict()), self._cohort2_stats)
-            # print(f'self.self._concepts2 = {self.self._concepts2}')
-            self.create_trait('_concepts2', t.List(t.Dict()), self._concepts2)
             # print(f'self._race_stats2 = {self._race_stats2}')
             self.create_trait('_race_stats2', t.List(t.Dict()), self._race_stats2)
             # print(f'self._ethnicity_stats2 = {self._ethnicity_stats2}')
@@ -155,5 +164,8 @@ class CohortWidget(anywidget.AnyWidget):
             # print(f'self._age_dist2 = {self._age_dist2}')
             self.create_trait('_age_dist2', t.List(t.Dict()), self._age_dist2)
             self.create_trait('_cohort2_shortname', t.Unicode(), self._cohort2_shortname)
+
+        # print(f'self._conditions = {self._conditions}')
+        self.create_trait('_conditions', t.List(t.Dict()), self.findInterestingConditions())
 
         # print("initialization completed")
