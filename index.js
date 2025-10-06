@@ -127,6 +127,16 @@ function render({ model, el }) {
         return typeof str === 'string' && str.trim().length === 0;
     }
 
+    function removeDuplicates(data, key) {
+        const uniqueMap = new Map();
+        data.forEach(item => {
+            if (!uniqueMap.has(item[key])) {
+                uniqueMap.set(item[key], item);
+            }
+        });
+        return Array.from(uniqueMap.values());
+    }
+
     function renameKeys(data, oldKeys, newKeys) {
         if (oldKeys.length !== newKeys.length) {
             throw new Error("oldKeys and newKeys must be the same length");
@@ -899,6 +909,11 @@ function render({ model, el }) {
         } else {
             table_data = series1.data;
         }
+
+        // TODO: Test this to make sure it is working as expected
+        // console.log(table_data);
+        table_data = removeDuplicates(table_data, 'concept_code');
+        // console.log(table_data);
 
         // Initialize filtered_data after table_data is prepared
         filtered_data = [...table_data];
