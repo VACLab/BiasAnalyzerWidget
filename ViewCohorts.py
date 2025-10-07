@@ -5,7 +5,7 @@ import json
 from datetime import datetime, date
 from decimal import Decimal
 
-class CohortWidget(anywidget.AnyWidget):
+class ViewCohorts(anywidget.AnyWidget):
     _esm = pathlib.Path(__file__).parent / "index.js"
     _css = pathlib.Path(__file__).parent / "index.css"
     initialized = t.Bool(default_value=False).tag(sync=True)
@@ -45,7 +45,7 @@ class CohortWidget(anywidget.AnyWidget):
             **kwargs
     ):
         # Determine if developer kwargs were passed
-        self.is_json_mode = any(k in kwargs and kwargs[k] is not None for k in CohortWidget._dev_keys)
+        self.is_json_mode = any(k in kwargs and kwargs[k] is not None for k in ViewCohorts._dev_keys)
 
         # Require cohort1 if no developer data
         if not self.is_json_mode and cohort1 is None:
@@ -160,7 +160,7 @@ class CohortWidget(anywidget.AnyWidget):
             # print(f'self._ethnicity_stats2 = {self._ethnicity_stats2}')
             self.create_trait('_ethnicity_stats2', t.List(t.Dict()), self._ethnicity_stats2)
             # print(f'self._gender_dist2 = {self._gender_dist2}')
-            self.create_trait('_ethnicity_dist2', t.List(t.Dict()), self._gender_dist2)
+            self.create_trait('_gender_dist2', t.List(t.Dict()), self._gender_dist2)
             # print(f'self._age_dist2 = {self._age_dist2}')
             self.create_trait('_age_dist2', t.List(t.Dict()), self._age_dist2)
             self.create_trait('_cohort2_shortname', t.Unicode(), self._cohort2_shortname)

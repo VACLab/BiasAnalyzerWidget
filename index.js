@@ -127,6 +127,16 @@ function render({ model, el }) {
         return typeof str === 'string' && str.trim().length === 0;
     }
 
+    function removeDuplicates(data, key) {
+        const uniqueMap = new Map();
+        data.forEach(item => {
+            if (!uniqueMap.has(item[key])) {
+                uniqueMap.set(item[key], item);
+            }
+        });
+        return Array.from(uniqueMap.values());
+    }
+
     function renameKeys(data, oldKeys, newKeys) {
         if (oldKeys.length !== newKeys.length) {
             throw new Error("oldKeys and newKeys must be the same length");
@@ -211,7 +221,7 @@ function render({ model, el }) {
     if(dataEntityExists(ethnicity_stats2))
         ethnicity_stats2 = renameKeys(ethnicity_stats2, ['ethnicity', 'ethnicity_count'], ['category', 'value']);
     if(dataEntityExists(gender_dist2))
-        gender_dist1 = renameKeys(gender_dist2, ['gender', 'gender_count'], ['category', 'value']);
+        gender_dist2 = renameKeys(gender_dist2, ['gender', 'gender_count'], ['category', 'value']);
     if(dataEntityExists(age_dist2))
         age_dist2 = renameKeys(age_dist2, ['age_bin', 'bin_count'], ['category', 'value']);
 
@@ -219,6 +229,12 @@ function render({ model, el }) {
         concepts1 = renameKeys(concepts1, ['count_in_cohort', 'prevalence'], ['cohort1_count', 'cohort1_prevalence']);
         concepts2 = renameKeys(concepts2, ['count_in_cohort', 'prevalence'], ['cohort2_count', 'cohort2_prevalence']);
     }
+
+    // TODO: Ask Hong to fix this in her code. This is a temporary fix for gender probabilities being out of 100,
+    //       when other probabilities are out of 1
+    gender_dist1 = d3.map(gender_dist1, d => ({ ...d, probability: d.probability / 100 }));
+    if (dataEntityExists(gender_dist2))
+        gender_dist2 = d3.map(gender_dist2, d => ({ ...d, probability: d.probability / 100 }));
 
     // </editor-fold>
 
@@ -899,6 +915,11 @@ function render({ model, el }) {
         } else {
             table_data = series1.data;
         }
+
+        // TODO: Test this to make sure it is working as expected
+        // console.log(table_data);
+        table_data = removeDuplicates(table_data, 'concept_code');
+        // console.log(table_data);
 
         // Initialize filtered_data after table_data is prepared
         filtered_data = [...table_data];
