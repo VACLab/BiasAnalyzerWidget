@@ -1,5 +1,5 @@
-# CohortWidget
-CohortWidget is prototype visualization Python widget developed in JavaScript with AnyWidget. It allows the user to compare two healthcare research cohorts. It is designed to work with BiasAnalyzer (https://github.com/VACLab/BiasAnalyzer). The package and widget together allow healthcare researchers to visualize cohort selection bias in Jupyter Notebooks. With BiasAnalyzer the researcher can define a cohort using inclusion and exclusion criteria, then request aggregate cohort statistics from a data source. The resulting data can then be passed to CohortWidget to render the visualization. 
+# BiasAnalyzerWidget
+BiasAnalyzerWidget is prototype visualization Python widget developed in JavaScript with AnyWidget. It allows the user to compare two healthcare research cohorts. It is designed to work with BiasAnalyzerCore (https://github.com/VACLab/BiasAnalyzerCore). The package and widget together allow healthcare researchers to visualize cohort selection bias in Jupyter Notebooks. With BiasAnalyzerCore the researcher can define a cohort using inclusion and exclusion criteria, then request aggregate cohort statistics from a data source. The resulting data can then be passed to BiasAnalyzerWidget to render the visualization. 
 
 ## Notebooks:
 * demo.ipynb: demos how to connect to the database and run
@@ -15,15 +15,15 @@ The utils folder contains:
 * fetch_data_all.ipynb - This is a utility notebook that read each yaml file in a given directory, including subdirectories, gets the data for that file, and outputs the json data to a given output directory. "source_dir" is the path to the read directory. "destination_dir" is the path to the write directory.
 
 ## Usage:
-1. Setup a python environment and install BiasAnalyzer
-2. Clone or fork CohortWidget
+1. Setup a python environment and install BiasAnalyzerCore
+2. Clone or fork BiasAnalyzerWidget
 
 If using the database:
 
-3. Initializes an instance of the BiasAnalyzer, and connect it to a database storing EHR data standardized to the Observational Medical Outcomes Partnership (OMOP) Common Data Model (CDM).
-4. Request one or two cohorts from BiasAnalyzer by providing it the cohort definition in declarative YAML format.
-5. Pass the cohort(s) to CohortWidget for visualization.
+3. Initializes an instance of the BiasAnalyzerCore, and connect it to a database storing EHR data standardized to the Observational Medical Outcomes Partnership (OMOP) Common Data Model (CDM).
+4. Request one or two cohorts from BiasAnalyzerCore by providing it the cohort definition in declarative YAML format.
+5. Pass the cohort(s) to BiasAnalyzerWidget for visualization.
 
 If using the json files:
 
-3. Read the json files and pass the json objects to CohortWidget for visualization.
+3. Read the json files and pass the json objects to BiasAnalyzerWidget for visualization.
