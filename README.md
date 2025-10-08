@@ -1,5 +1,7 @@
 # BiasAnalyzerWidget
-BiasAnalyzerWidget is prototype visualization Python widget developed in JavaScript with AnyWidget. It allows the user to compare two healthcare research cohorts. It is designed to work with BiasAnalyzerCore (https://github.com/VACLab/BiasAnalyzerCore). The package and widget together allow healthcare researchers to visualize cohort selection bias in Jupyter Notebooks. With BiasAnalyzerCore the researcher can define a cohort using inclusion and exclusion criteria, then request aggregate cohort statistics from a data source. The resulting data can then be passed to BiasAnalyzerWidget to render the visualization. 
+The BiasAnalyzerWidget project is developing a prototype visualization Python widget called ViewCohorts. AnyWidget is used to render JavaScript. ViewCohorts allows the user to compare two healthcare research cohorts. 
+
+It is designed to work with BiasAnalyzerCore (https://github.com/VACLab/BiasAnalyzerCore). The package and widget together allow healthcare researchers to visualize cohort selection bias in Jupyter Notebooks. With BiasAnalyzerCore the researcher can define a cohort using inclusion and exclusion criteria, then request aggregate cohort statistics from a data source. The resulting data can then be passed to the widget to render the visualization. 
 
 ## Notebooks:
 * demo.ipynb: demos how to connect to the database and run
@@ -22,8 +24,8 @@ If using the database:
 
 3. Initializes an instance of the BiasAnalyzerCore, and connect it to a database storing EHR data standardized to the Observational Medical Outcomes Partnership (OMOP) Common Data Model (CDM).
 4. Request one or two cohorts from BiasAnalyzerCore by providing it the cohort definition in declarative YAML format.
-5. Pass the cohort(s) to BiasAnalyzerWidget for visualization.
+5. Pass the cohort(s) to ViewCohort for visualization.
 
 If using the json files:
 
-3. Read the json files and pass the json objects to BiasAnalyzerWidget for visualization.
+3. Read the json files and pass the json objects to ViewCohort for visualization.
