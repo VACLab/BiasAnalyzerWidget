@@ -917,9 +917,9 @@ function render({ model, el }) {
         }
 
         // TODO: Test this to make sure it is working as expected
-        // console.log(table_data);
+        console.log(table_data);
         table_data = removeDuplicates(table_data, 'concept_code');
-        // console.log(table_data);
+        console.log(table_data);
 
         // Initialize filtered_data after table_data is prepared
         filtered_data = [...table_data];
