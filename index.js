@@ -12,14 +12,13 @@ import * as Inputs from "https://esm.sh/@observablehq/inputs";
 function render({ model, el }) {
     const font_size = '12px';
 
-    /* DISPATCHERS */
+    // <editor-fold desc="---------- DISPATCHERS ----------">
 
     // handles the concepts table
     const conceptsTableDispatcher = d3.dispatch('filter', 'sort', 'change-dp', 'column-resize', 'view-pct');
     // handles all tooltips
     const tooltipDispatcher = d3.dispatch("show", "hide");
 
-    // Ref: Claude AI
     tooltipDispatcher.on("show", function({ content, event }) {
         const containerRect = vis_container.node().getBoundingClientRect();
         const x = event.clientX - containerRect.left;
@@ -97,6 +96,8 @@ function render({ model, el }) {
         d3.selectAll(".tooltip").remove();
     });
 
+    // </editor-fold>
+
     // <editor-fold desc="---------- UTILITY FUNCTIONS ----------"
 
     // clears an element
@@ -110,21 +111,38 @@ function render({ model, el }) {
         else return entity && entity.length > 0;
     }
 
+    function formatFraction(numerator, denominator) {
+        return `
+        <span style="display: inline-flex; flex-direction: column; text-align: center; vertical-align: middle; font-size: 0.9em; line-height: 1.2;">
+            <span style="border-bottom: 1px solid black; padding: 0 4px;">${numerator}</span>
+            <span style="padding: 0 4px;">${denominator}</span>
+        </span>
+    `;
+    }
+
     // converts timestamp to formatted date 'YYYY-MM-DD'
     function getIsoDateString(timestamp) {
         let aDate = new Date(timestamp);
         return aDate.toISOString().split('T')[0];
     }
 
-    // function getProportion(numerator, denominator, do_format = false){
-    //     if (denominator === 0)
-    //         return 'N/A';
-    //     const  proportion = numerator / denominator;
-    //     return do_format ? d3.format('.2%')(proportion) : proportion;
-    // }
+    function isNullOrEmpty(value) {
+        if (value === null || value === undefined)
+            return true;
 
-    function isEmptyString(str) {
-        return typeof str === 'string' && str.trim().length === 0;
+        switch (typeof value) {
+            case 'string':
+                return value.trim().length === 0;
+            case 'object':
+                if (Array.isArray(value))
+                    return value.length === 0;
+                return Object.keys(value).length === 0;
+            case 'number':
+            case 'boolean':
+                return false;
+            default:
+                return false;
+        }
     }
 
     function removeDuplicates(data, key) {
@@ -172,30 +190,12 @@ function render({ model, el }) {
         }
     }
 
-    // function reduce_transform(data) {
-    //     // validate that data is a non-empty array
-    //     if (!Array.isArray(data) || data.length === 0) {
-    //         throw new Error("data must be a non-empty array");
-    //     }
-    //
-    //     // validate that data contains valid objects
-    //     if (!data[0] || typeof data[0] !== 'object') {
-    //         throw new Error("data must contain valid objects");
-    //     }
-    //
-    //     return Object.keys(data[0]).reduce((acc, key) => {
-    //         acc[key] = data.map(d => d[key]);
-    //         return acc;
-    //     }, {});
-    // }
-
     // </editor-fold>
 
     // <editor-fold desc="---------- DEFINE DATA ----------">
 
     var cohort1_meta = model.get('_cohort1_meta');
     var cohort1_stats = model.get('_cohort1_stats');
-    var concepts1 = model.get('_concepts1');
     var race_stats1 = model.get('_race_stats1');
     var ethnicity_stats1 = model.get('_ethnicity_stats1');
     var gender_dist1 = model.get('_gender_dist1');
@@ -204,12 +204,14 @@ function render({ model, el }) {
 
     var cohort2_meta = model.get('_cohort2_meta');
     var cohort2_stats = model.get('_cohort2_stats');
-    var concepts2 = model.get('_concepts2');
     var race_stats2 = model.get('_race_stats2');
     var ethnicity_stats2 = model.get('_ethnicity_stats2');
     var gender_dist2 = model.get('_gender_dist2');
     var age_dist2 = model.get('_age_dist2');
     var cohort2_shortname = model.get('_cohort2_shortname');
+
+    var cond_hier = model.get('_cond_hier');
+    console.log('cond_hier', cond_hier);
 
     race_stats1 = renameKeys(race_stats1, ['race', 'race_count'], ['category', 'value']);
     ethnicity_stats1 = renameKeys(ethnicity_stats1, ['ethnicity', 'ethnicity_count'], ['category', 'value']);
@@ -225,16 +227,15 @@ function render({ model, el }) {
     if(dataEntityExists(age_dist2))
         age_dist2 = renameKeys(age_dist2, ['age_bin', 'bin_count'], ['category', 'value']);
 
-    if(dataEntityExists(concepts2)) {
-        concepts1 = renameKeys(concepts1, ['count_in_cohort', 'prevalence'], ['cohort1_count', 'cohort1_prevalence']);
-        concepts2 = renameKeys(concepts2, ['count_in_cohort', 'prevalence'], ['cohort2_count', 'cohort2_prevalence']);
-    }
-
     // TODO: Ask Hong to fix this in her code. This is a temporary fix for gender probabilities being out of 100,
     //       when other probabilities are out of 1
     gender_dist1 = d3.map(gender_dist1, d => ({ ...d, probability: d.probability / 100 }));
     if (dataEntityExists(gender_dist2))
         gender_dist2 = d3.map(gender_dist2, d => ({ ...d, probability: d.probability / 100 }));
+
+    function isSingleCohort(){
+        return Object.keys(cond_hier[0]['metrics']).length === 1;
+    }
 
     // </editor-fold>
 
@@ -445,7 +446,7 @@ function render({ model, el }) {
 
     // <editor-fold desc="---------- SUMMARY STATISTICS FUNCTIONS ----------">
 
-    function SummaryStatistics(container, series1, { series2 = { data: null, meta: null, shortname: "cohort 2" } } = {}) {
+    function SummaryStatistics(container, series1, { series2 = { data: null, meta: null, shortname1: "cohort 2" } } = {}) {
         // Main container: vertical layout
         container.style('display', 'flex')
             .style('flex-direction', 'column')
@@ -639,7 +640,7 @@ function render({ model, el }) {
 
         function drawSeriesBars(container, series, series_index, class_base_name, yScale) {
             function getTooltipContent(d, series, xlabel) {
-                const patient_count_text = `${d.value || 0}/${series.total_count} (${d3.format(".0%")(d.probability || 0)})`;
+                const patient_count_text = `${d3.format(".0%")(d.probability || 0)} (${formatFraction(d.value || 0, series.total_count)})`;
                 return `<strong>${series.shortname}: ${xlabel + ': ' || ''} ${d.category}</strong><hr>Count: ${patient_count_text}`;
             }
 
@@ -723,14 +724,12 @@ function render({ model, el }) {
 
     // <editor-fold desc="---------- CONCEPTS TABLE FUNCTIONS ----------">
 
-    function ConceptsTable(
-        series1, dispatch,
-        {
-            series2 = { data: null, shortname: "baseline" },
+    function ConceptsTable(dispatch, data, shortnames = [], options = {}){
+        const {
             dimensions = { height: 432, row_height: 30 },
-            pageSize = 10  // Fixed page size
-        } = {}
-    ){
+            pageSize = 10
+        } = options;
+
         let full_data = [];       // original dataset
         let visible_data = [];    // filtered + sorted subset
 
@@ -742,7 +741,8 @@ function render({ model, el }) {
         let current_page = 0;
         let page_size = pageSize;
 
-        function getTooltipContent(d, series, series_name){
+        function getTooltipContent(d, series_name){
+            // console.log('getTooltipContent d = ', d);
             const heading = `<strong>Concept: ${d.concept_code}</strong><br>(${d.concept_name})<hr>`;
             let msg = ` (no difference)`;
             if(series_name !== "")
@@ -750,37 +750,35 @@ function render({ model, el }) {
             return `${heading} Diff. in Prev: ${Math.abs(d.difference_in_prevalence).toFixed(prevalence_dp)}<br>${msg}`;
         }
 
-        function prepareConceptsCompareData(data1, data2) {
-            let mergedList = data1.map(item1 => {
-                const item2 = data2.find(item => item.concept_code === item1.concept_code);
-                return Object.assign({}, item1, item2);
+        function prepareCondOccurCompareData() {
+            // Add calculated fields
+            let data = cond_hier.map(item => {
+                const [prev1 = 0, prev2 = 0] = Object.values(item.metrics).map(m => m.prevalence);
+                const [count1 = 0, count2 = 0] = Object.values(item.metrics).map(m => m.count);
+                return {
+                    ...item,  // Keep ALL original fields
+                    difference_in_prevalence: prev1 - prev2,
+                    cohort1_prevalence: prev1,
+                    cohort2_prevalence: prev2,
+                    count_in_cohort1: count1,
+                    count_in_cohort2: count2
+                };
             });
+            return data;
+        }
 
-            // Add a key-value pair based on a calculation (e.g., double the age)
-            mergedList = mergedList.map(item => {
-                item.difference_in_prevalence = (item.cohort1_prevalence ?? 0) - (item.cohort2_prevalence ?? 0);
-
-                item.bias = Math.abs(item.difference_in_prevalence);
-                delete item.cohort1_count;
-                delete item.cohort2_count;
-                delete item.ancestor_concept_id;
-                delete item.descendant_concept_id;
-                return item;
+        function prepareCondOccurSingleData() {
+            // Add calculated fields
+            let data = cond_hier.map(item => {
+                const [prev = 0] = Object.values(item.metrics).map(m => m.prevalence);
+                const [count = 0] = Object.values(item.metrics).map(m => m.count);
+                return{
+                    ...item,  // Keep ALL original fields
+                    prevalence: prev,
+                    count_in_cohort: count
+                };
             });
-
-            const order = ['concept_code', 'concept_name', 'cohort2_prevalence', 'difference_in_prevalence',
-                'cohort1_prevalence', 'bias'];
-
-            mergedList = mergedList.map(item => {
-                const rearrangedItem = {};
-                order.forEach(key => {
-                    if (item.hasOwnProperty(key)) {
-                        rearrangedItem[key] = item[key];
-                    }
-                });
-                return rearrangedItem;
-            });
-            return mergedList;
+            return data;
         }
 
         // Add pagination helper functions
@@ -892,17 +890,13 @@ function render({ model, el }) {
         // </editor-fold>
 
         // ==== Validation for required params ====
-        if (series1 === null || series1.data === null) {
+        if (!dataEntityExists(data)) {
             throw new Error("ConceptsTable requires at least one cohort.");
         }
 
-        if (isEmptyString(series1.shortname)) {
-            series1.shortname = 'study cohort';
-        }
-
-        // ==== Validate optional params ====
-        if (series2 !== null && series2.data !== null && !Array.isArray(series2.data)) {
-            console.warn("ConceptsTable: Series 2 data should be an array (or null).");
+        if (isNullOrEmpty(shortnames)) {
+            shortnames[0] = 'study'
+            shortnames[1] = 'baseline'
         }
 
         if (typeof dimensions !== "object" || dimensions === null) {
@@ -910,16 +904,12 @@ function render({ model, el }) {
         }
 
         let table_data;
-        if (series2.data !== null) {
-            table_data = prepareConceptsCompareData(series1.data, series2.data);
+        if (!isSingleCohort()) {
+            table_data = prepareCondOccurCompareData();
         } else {
-            table_data = series1.data;
+            table_data = prepareCondOccurSingleData();
         }
-
-        // TODO: Test this to make sure it is working as expected
-        console.log(table_data);
-        table_data = removeDuplicates(table_data, 'concept_code');
-        console.log(table_data);
+        console.log('table_data', table_data)
 
         // Initialize filtered_data after table_data is prepared
         filtered_data = [...table_data];
@@ -927,7 +917,7 @@ function render({ model, el }) {
         const text_offset_x = 10;
         const { height, row_height } = dimensions;
 
-        // === container - CHANGED: Remove scroll, set fixed height ===
+        // Remove scroll & set fixed height
         const container = d3.create("div")
             .style("width", "100%")
             .style("border", "1px solid #ccc")
@@ -947,32 +937,34 @@ function render({ model, el }) {
             });
         }
 
-        const headers_text = makeKeysWords(Object.keys(table_data[0]), series1.shortname, series2.shortname);
+        const headers_text = makeKeysWords(Object.keys(table_data[0]), shortnames[0], shortnames[1]);
+
         if (!table_data.length) {
             throw new Error("ConceptsTable: table_data is empty.");
         }
 
         let columns_data;
-        if(series2.data === null){
+        if(isSingleCohort()){
             columns_data = [
-                { text: headers_text[1], field: "concept_code",  x: 0,   width: 160 },
-                { text: headers_text[0], field: "concept_name",  x: 160, width: 590 },
-                { text: headers_text[2], field: "count_in_cohort", x: 750, width: 160 },
-                { text: headers_text[3], field: "prevalence", x: 910, width: 160 }
+                { text: headers_text[2], field: "concept_code",  x: 0,   width: 160 },
+                { text: headers_text[1], field: "concept_name",  x: 160, width: 590 },
+                { text: headers_text[8], field: "count_in_cohort", x: 750, width: 160 },
+                { text: headers_text[7], field: "prevalence", x: 910, width: 160 }
             ];
         }
         else{
             columns_data = [
-                { text: headers_text[0], field: "concept_code", x: 0, width: 160, type: 'text' },
+                { text: headers_text[2], field: "concept_code", x: 0, width: 160, type: 'text' },
                 { text: headers_text[1], field: "concept_name", x: 160, width: 350, type: 'text' },
-                { text: headers_text[2], field: "cohort2_prevalence", x: 510, width: 160, type: 'text' },
-                { text: headers_text[3], field: "difference_in_prevalence", x: 670, width: 240, type: 'compare_bars' },
-                { text: headers_text[4], field: "cohort1_prevalence", x: 910, width: 160, type: 'text' }
-                // ,{ text: headers_text[5], field: "bias", x: 950, width: 120, type: 'bar' }
+                { text: headers_text[9], field: "cohort2_prevalence", x: 510, width: 160, type: 'text' },
+                { text: headers_text[7], field: "difference_in_prevalence", x: 670, width: 240, type: 'compare_bars' },
+                { text: headers_text[8], field: "cohort1_prevalence", x: 910, width: 160, type: 'text' }
             ];
         }
 
         const total_table_width = d3.sum(columns_data, d => d.width);
+
+        console.log('columns_data', columns_data);
 
         const headers_svg = container.append("svg")
             .attr("width", total_table_width)
@@ -988,7 +980,7 @@ function render({ model, el }) {
             .attr("transform", d => `translate(${d.x},0)`);
 
         const color = d3.scaleOrdinal()
-            .domain([series1.shortname, series2?.shortname]) // the series labels
+            .domain(shortnames) // the series labels
             .range(d3.schemePaired);
 
         header_g.append("rect")
@@ -1031,9 +1023,9 @@ function render({ model, el }) {
                 dispatch.call("sort", this, d);
             });
 
-        dispatch.on("sort", function(columnData) {
+        dispatch.on("sort", function(column_data) {
             // console.log('handling dispatch sort call');
-            handleSort(columnData);
+            handleSort(column_data);
         });
 
         dispatch.on("filter", function(search_term) {
@@ -1062,22 +1054,20 @@ function render({ model, el }) {
         });
 
         dispatch.on("column-resize", function(data) {
-            const {phase, columnData, element} = data;
-
-            // console.log('column-resize handler this', this)
+            const {phase, columnData: column_data, element} = data;
 
             switch (phase) {
                 case "start":
                     const {startWidth, startX} = data;
-                    columnData.startWidth = startWidth;
-                    columnData.startX = startX;
+                    column_data.startWidth = startWidth;
+                    column_data.startX = startX;
                     break;
 
                 case "drag":
                     const {currentX} = data;
-                    const dx = currentX - columnData.startX;
-                    const newWidth = Math.max(30, columnData.startWidth + dx);
-                    columnData.width = newWidth;
+                    const dx = currentX - column_data.startX;
+                    const newWidth = Math.max(30, column_data.startWidth + dx);
+                    column_data.width = newWidth;
 
                     // Update header rect using the passed element reference
                     d3.select(element.parentNode).select("rect").attr("width", newWidth);
@@ -1098,40 +1088,35 @@ function render({ model, el }) {
                     headers_g.selectAll("g").select(".sort-indicator")
                         .attr("x", d => d.width - 15);
 
-                    // Update body cell positions and widths using D3 selections
-                    body_svg.selectAll(".row").each(function () {
-                        d3.select(this).selectAll(".cell")
-                            .data(columns_data)
-                            .attr("transform", col => `translate(${col.x},0)`)
+                    body_svg.selectAll(".cell").each(function(d, i) {
+                        const col = columns_data[i % columns_data.length];
+                        d3.select(this)
+                            .attr("transform", `translate(${col.x},0)`)
                             .select(".cell-bg")
-                            .attr("width", col => col.width);
+                            .attr("width", col.width);
                     });
 
                     // Update body and header SVG width
-                    const totalWidth = d3.sum(columns_data, c => c.width);
-                    body_svg.attr("width", totalWidth);
-                    headers_svg.attr("width", totalWidth);
+                    const total_width = d3.sum(columns_data, c => c.width);
+                    body_svg.attr("width", total_width);
+                    headers_svg.attr("width", total_width);
                     break;
 
                 case "end":
                     // Clean up temporary properties
-                    delete columnData.startWidth;
-                    delete columnData.startX;
+                    delete column_data.startWidth;
+                    delete column_data.startX;
                     break;
             }
         });
 
         dispatch.on("change-dp", function(dp_value) {
-            // handleChangeDP(dp_value);
-
-            // function handleChangeDP(dp_value) {
             // Parse and validate the decimal places value
             let newDP = parseInt(dp_value);
             if (isNaN(newDP) || newDP < 0 || newDP > 16) {
                 newDP = 0;
             }
 
-            // Update the prevalence_dp variable (move it outside renderTableCells to module scope)
             prevalence_dp = newDP;
 
             // Clear existing table body content
@@ -1191,27 +1176,26 @@ function render({ model, el }) {
                 })
             );
 
-        // === BODY - CHANGED: Fixed height based on page size ===
+        // TABLE BODY
         const body_height = page_size * row_height;
 
         // track selected rows
-        let selectedRows = new Set();
+        let selected_rows = new Set();
 
         // clear selections for filtered-out rows
-        // TODO: simplify this function so that the selection is removed before the data is hidden
-        function clearHiddenSelections(visibleData) {
-            const visibleRowIds = new Set(visibleData.map(d => d.id || d.shortname || JSON.stringify(d)));
+        function clearHiddenSelections(visible_data) {
+            const visibleRowIds = new Set(visible_data.map(d => d.id || d.shortname || JSON.stringify(d)));
 
             // Find selected rows that are no longer visible
-            const hiddenSelectedRows = [...selectedRows].filter(rowId => !visibleRowIds.has(rowId));
+            const hidden_selected_rows = [...selected_rows].filter(rowId => !visibleRowIds.has(rowId));
 
             // Remove hidden rows from selection
-            hiddenSelectedRows.forEach(rowId => {
-                selectedRows.delete(rowId);
+            hidden_selected_rows.forEach(rowId => {
+                selected_rows.delete(rowId);
             });
 
             // If we had selections that are now hidden, update the UI
-            if (hiddenSelectedRows.length > 0) {
+            if (hidden_selected_rows.length > 0) {
                 rows_g.selectAll("g").classed("selected", false);
                 rows_g.selectAll(".row-border").remove();
             }
@@ -1224,8 +1208,8 @@ function render({ model, el }) {
         const rows_g = body_svg.append("g");
 
         let max_bias, max_diff, margin = 5;
-        if (series2.data !== null) {
-            max_bias = d3.max(table_data, d => Math.abs(d.bias)) || 0;
+        if (!isSingleCohort()) {
+            // max_bias = d3.max(table_data, d => Math.abs(d.bias)) || 0;
             max_diff = d3.max(table_data, d => Math.abs(d.difference_in_prevalence)) || 0;
         }
 
@@ -1239,26 +1223,26 @@ function render({ model, el }) {
 
             // Add click handler to the row group itself
             row.attr("cursor", "pointer")
-                .on("click", function(event, row_data) {
+                .on("click", function(event, d) {
                     // Get a unique identifier for this row (adjust based on your data structure)
-                    const rowId = row_data.id || row_data.shortname || JSON.stringify(row_data);
+                    const rowId = d.id || d.shortname || JSON.stringify(d);
 
                     // Check if this row is already selected
-                    if (selectedRows.has(rowId)) {
+                    if (selected_rows.has(rowId)) {
                         // Deselect this row
-                        selectedRows.delete(rowId);
+                        selected_rows.delete(rowId);
                         d3.select(this).classed("selected", false);
                         // Remove the border
                         d3.select(this).select(".row-border").remove();
-                        onRowSelect(row_data, false);
+                        onRowSelect(d, false);
                     } else {
                         // Clear all previous selections first
-                        selectedRows.clear();
+                        selected_rows.clear();
                         rows_g.selectAll("g").classed("selected", false);
                         rows_g.selectAll(".row-border").remove();
 
                         // Select this row
-                        selectedRows.add(rowId);
+                        selected_rows.add(rowId);
                         d3.select(this).classed("selected", true);
 
                         // Add border around the entire row
@@ -1269,11 +1253,11 @@ function render({ model, el }) {
                             .attr("width", total_table_width)
                             .attr("height", row_height);
 
-                        onRowSelect(row_data, true);
+                        onRowSelect(d, true);
                     }
                 });
 
-            function getPrevalenceValue(val, col, row_data) {
+            function getPrevalenceValue(val, col, d) {
                 // Define which fields are numeric
                 const numericFields =
                     ["prevalence", "count_in_cohort", "cohort1_prevalence", "cohort2_prevalence"];
@@ -1304,14 +1288,14 @@ function render({ model, el }) {
                     .attr("fill", "#f0f0f0")
                     .attr("stroke", "#ccc");
 
-                if (series2.data === null) {
+                if (isSingleCohort()) {
                     cell.append("text")
                         .attr("x", text_offset_x)
                         .attr("y", row_height / 2)
                         .attr("dy", "0.35em")
                         .attr("text-anchor", "start")
-                        .text(row_data => {
-                            return getPrevalenceValue(row_data[col.field], col, row_data);
+                        .text(d => {
+                            return getPrevalenceValue(d[col.field], col, d);
                         });
                     // TODO: for prevalence column only, show fraction (e.g., 404/414)
                     // .on("mouseover", function (event, d ) {
@@ -1326,8 +1310,8 @@ function render({ model, el }) {
                 } else {
 
                     function getHighestPrevalenceSeriesName(d) {
-                        if (d.cohort1_prevalence > d.cohort2_prevalence) return 1;
-                        if (d.cohort1_prevalence < d.cohort2_prevalence) return 2;
+                        if (d.cohort1_prevalence > d.cohort2_prevalence) return 0;
+                        if (d.cohort1_prevalence < d.cohort2_prevalence) return 1;
                         return 0;
                     }
 
@@ -1338,8 +1322,8 @@ function render({ model, el }) {
                                 .attr("y", row_height / 2)
                                 .attr("dy", "0.35em")
                                 .attr("text-anchor", "start")
-                                .text(row_data => {
-                                    return getPrevalenceValue(row_data[col.field], col, row_data);
+                                .text(d => {
+                                    return getPrevalenceValue(d[col.field], col, d);
                                 });
                             // TODO: for prevalence columns only, show fraction (e.g., 404/414)
                             // .on("mouseover", function (event, d ) {
@@ -1358,7 +1342,7 @@ function render({ model, el }) {
                                 .domain([0, max_bias || 1])
                                 .range([margin, col.width - margin]);  // full available space inside cell
 
-                            cell.each(function (row_data) {
+                            cell.each(function (d) {
                                 g = d3.select(this);
                                 outerHeight = row_height;
                                 innerY = margin;
@@ -1368,7 +1352,7 @@ function render({ model, el }) {
                                 g.append("rect")
                                     .attr("x", 0)
                                     .attr("y", innerY)
-                                    .attr("width", biasScale(Math.abs(row_data.bias)))
+                                    .attr("width", biasScale(Math.abs(d.metrics['1'].prevalence)))
                                     .attr("height", innerH)
                                     .attr("fill", "lightslategrey");
 
@@ -1378,8 +1362,8 @@ function render({ model, el }) {
                                     .attr("y", outerHeight / 2 + 4)
                                     .attr("font-size", font_size)
                                     .attr("fill", "black")
-                                    .text(row_data.bias !== null ? row_data.bias.toFixed(prevalence_dp) :
-                                        dafault_prevalence.toFixed(prevalence_dp));
+                                    .text(Math.abs(d.metrics['1'].count !== null ? Math.abs(d.metrics['1'].count).toFixed(prevalence_dp) :
+                                        dafault_prevalence.toFixed(prevalence_dp)));
                             });
                             break;
 
@@ -1390,7 +1374,7 @@ function render({ model, el }) {
 
                             zeroX = barScale(0);
 
-                            cell.each(function (row_data) {
+                            cell.each(function (d) {
                                 g = d3.select(this);
                                 outerHeight = row_height;
                                 innerY = 5;
@@ -1406,24 +1390,23 @@ function render({ model, el }) {
                                     .attr("stroke-width", 1)
                                     .attr("stroke-dasharray", "3,3");
 
-                                const diff_val = row_data.difference_in_prevalence;
+                                const diff_val = d.difference_in_prevalence;
                                 const abs_diff = Math.abs(diff_val);
+                                // console.log('d', d);
 
                                 // Bar (only if difference is significant enough to be visible)
-                                if (abs_diff >= 0.1) {
+                                if (abs_diff >= 0.001) {
                                     g.append("rect")
                                         .attr("x", Math.min(zeroX, barScale(diff_val)))
                                         .attr("y", innerY)
                                         .attr("width", Math.abs(barScale(diff_val) - zeroX))
                                         .attr("height", innerH)
-                                        .attr("fill", diff_val < 0 ? color(series2.shortname) : color(series1.shortname))
+                                        .attr("fill", diff_val < 0 ? color(shortnames[1]) : color(shortnames[0]))
                                         .on("mouseover", function (event, d) {
                                             const highest_prevalence = getHighestPrevalenceSeriesName(d);
                                             let highest_series_name = "";
-                                            if(highest_prevalence === 1)
-                                                highest_series_name = series1.shortname
-                                            else if (highest_prevalence === 2)
-                                                highest_series_name = series2.shortname;
+                                            if(highest_prevalence >= 0)
+                                                highest_series_name = shortnames[highest_prevalence];
 
                                             tooltipDispatcher.call("show", null, {
                                                 content: getTooltipContent(d, highest_series_name),
@@ -1436,7 +1419,7 @@ function render({ model, el }) {
                                 }
 
                                 // Invisible hover rectangle for small/zero values
-                                if (abs_diff < 0.1) {
+                                if (abs_diff <= 0.005) {
                                     const hover_width = barScale(0.2) - barScale(0); // Width for 0.2 difference
                                     g.append("rect")
                                         .attr("x", zeroX - hover_width/2)
@@ -1449,10 +1432,8 @@ function render({ model, el }) {
                                         .on("mouseover", function (event, d) {
                                             const highest_prevalence = getHighestPrevalenceSeriesName(d);
                                             let highest_series_name = "";
-                                            if(highest_prevalence === 1)
-                                                highest_series_name = series1.shortname
-                                            else if (highest_prevalence === 2)
-                                                highest_series_name = series2.shortname;
+                                            if(highest_prevalence >= 0)
+                                                highest_series_name = shortnames[highest_prevalence];
 
                                             tooltipDispatcher.call("show", null, {
                                                 content: getTooltipContent(d, highest_series_name),
@@ -1465,19 +1446,19 @@ function render({ model, el }) {
                                 }
 
                                 // Text label - positioned based on value sign
-                                const textX = row_data.difference_in_prevalence >= 0 ?
-                                    Math.min(zeroX, barScale(row_data.difference_in_prevalence)) - 5 : // Left of positive bars
-                                    Math.max(zeroX, barScale(row_data.difference_in_prevalence)) + 5;  // Right of negative bars
+                                const textX = d.difference_in_prevalence >= 0 ?
+                                    Math.min(zeroX, barScale(d.difference_in_prevalence)) - 5 : // Left of positive bars
+                                    Math.max(zeroX, barScale(d.difference_in_prevalence)) + 5;  // Right of negative bars
 
-                                const textAnchor = row_data.difference_in_prevalence >= 0 ? "end" : "start";
+                                const textAnchor = d.difference_in_prevalence >= 0 ? "end" : "start";
 
                                 // g.append("text")
                                 //     .attr("x", textX)
                                 //     .attr("y", row_height / 2 + 4)
                                 //     .attr("text-anchor", textAnchor)
                                 //     .attr("font-size", font_size)
-                                //     .text(row_data.difference_in_prevalence !== null ?
-                                //         Math.abs(row_data.difference_in_prevalence.toFixed(prevalence_dp)) :
+                                //     .text(d.difference_in_prevalence !== null ?
+                                //         Math.abs(d.difference_in_prevalence.toFixed(prevalence_dp)) :
                                 //         dafault_prevalence.toFixed(prevalence_dp));
                             });
                             break;
@@ -1496,11 +1477,10 @@ function render({ model, el }) {
         }
 
         function updateTableBody() {
-            // CHANGED: Use getCurrentPageData() instead of filtered_data
             const page_data = getCurrentPageData();
 
             const rows = rows_g.selectAll(".row")
-                .data(page_data, d => d.concept_code || Math.random());
+                .data(page_data, d => d.concept_code);
 
             // Remove exiting rows
             rows.exit().remove();
@@ -1601,8 +1581,9 @@ function render({ model, el }) {
                 }
             });
 
-        // Initial render - CHANGED: Use getCurrentPageData() instead of filtered_data
+        // Initial render
         const initial_page_data = getCurrentPageData();
+        // console.log('initial_page_data', initial_page_data);
         const row = rows_g.selectAll(".row")
             .data(initial_page_data)
             .enter()
@@ -1614,7 +1595,7 @@ function render({ model, el }) {
 
         // Initialize with descending sort on difference_in_prevalence if we have comparison data
         // or on prevalence for single dataset tables
-        if (series2.data !== null) {
+        if (!isSingleCohort()) {
             const diffColumn = columns_data.find(col => col.field === "difference_in_prevalence");
             if (diffColumn) {
                 diffColumn.sortDirection = "desc";
@@ -1719,19 +1700,9 @@ function render({ model, el }) {
         SpinnerBox(conceptsTableDispatcher, {label: 'Prev dp'})
     );
 
-    // if there is only one set of concepts, draw a single cohort concepts table
-    if(!dataEntityExists(concepts2)) {
-        // draw the concepts table
-        div_concepts_table.append(() =>
-            ConceptsTable({data: concepts1, shortname: cohort1_shortname}, conceptsTableDispatcher)
-        );
-    }
-    else{
-        div_concepts_table.append(() =>
-            ConceptsTable({data: concepts1, shortname: cohort1_shortname}, conceptsTableDispatcher,
-                {series2: {data: concepts2, shortname: cohort2_shortname}})
-        );
-    }
+    div_concepts_table.append(() =>
+        ConceptsTable(conceptsTableDispatcher, cond_hier, [cohort1_shortname, cohort2_shortname])
+    );
 
     // </editor-fold>
 
