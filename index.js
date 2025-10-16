@@ -909,7 +909,7 @@ function render({ model, el }) {
         } else {
             table_data = prepareCondOccurSingleData();
         }
-        console.log('table_data', table_data)
+        // console.log('table_data', table_data)
 
         // Initialize filtered_data after table_data is prepared
         filtered_data = [...table_data];
@@ -921,6 +921,14 @@ function render({ model, el }) {
         const container = d3.create("div")
             .style("width", "100%")
             .style("border", "1px solid #ccc")
+            .style("display", "flex")
+            .style("flex-direction", "column")
+            .style("height", "100%");
+
+        const table_wrapper = container.append("div")
+            .style("flex", "1")
+            .style("overflow", "auto")
+            .style("min-height", "0");
 
         // === HEADERS ===
 
@@ -966,7 +974,7 @@ function render({ model, el }) {
 
         console.log('columns_data', columns_data);
 
-        const headers_svg = container.append("svg")
+        const headers_svg = table_wrapper.append("svg")
             .attr("width", total_table_width)
             .attr("height", row_height)
             .style("background", "white");
@@ -1201,7 +1209,7 @@ function render({ model, el }) {
             }
         }
 
-        const body_svg = container.append("svg")
+        const body_svg = table_wrapper.append("svg")
             .attr("width", total_table_width)
             .attr("height", body_height);
 
@@ -1508,13 +1516,16 @@ function render({ model, el }) {
         }
 
         // === ADD PAGINATION CONTROLS ===
+
+        // Pagination stays outside the scrollable wrapper
         const pagination_container = container.append("div")
             .style("padding", "5px 10px")
             .style("border-top", "1px solid #ccc")
             .style("background", "#f9f9f9")
             .style("display", "flex")
             .style("justify-content", "space-between")
-            .style("align-items", "center");
+            .style("align-items", "center")
+            .style("flex-shrink", "0");
 
         // Left side - page info
         pagination_container.append("div")
@@ -1637,9 +1648,9 @@ function render({ model, el }) {
 
     // concepts row
     const concepts_row = vis_container.append('div').attr('class', 'row-container concepts-row');
-    const div_concepts_table_container = concepts_row.append('div').attr('class', 'col-container');
-    // const div_concept_dragbar = concepts_row.append('div').attr('class', 'col-container dragbar');
-    // const div_concept_detail_container = concepts_row.append('div').attr('class', 'col-container');
+    const div_concepts_table_container = concepts_row.append('div').attr('class', 'col-container').style('flex', '1 1 auto');;
+    const drag_bar = concepts_row.append('div').attr('class', 'drag-bar');
+    const div_concept_detail_container = concepts_row.append('div').attr('class', 'col-container').style('flex', '0 0 0px');
 
     // concepts controls row
     const div_concepts_ctrl = div_concepts_table_container.append('div')
@@ -1650,6 +1661,128 @@ function render({ model, el }) {
 
     // the container row for the concepts table itself
     const div_concepts_table = div_concepts_table_container.append('div').attr('class', 'row-container');
+
+    // -------------------------------------------------------------------------------------------------
+
+    let isDragging = false;
+    let startX = 0;
+    let startWidthLeft = 0;
+    let startWidthRight = 0;
+
+    const dragBarElement = drag_bar.node();
+
+    dragBarElement.addEventListener('pointerdown', function(event) {
+        isDragging = true;
+        startX = event.clientX;
+
+        const tableRect = div_concepts_table_container.node().getBoundingClientRect();
+        const detailRect = div_concept_detail_container.node().getBoundingClientRect();
+
+        startWidthLeft = tableRect.width;
+        startWidthRight = detailRect.width;
+
+        vis_container.node().classList.add('dragging');
+
+        // Capture pointer events
+        dragBarElement.setPointerCapture(event.pointerId);
+
+        event.preventDefault();
+        event.stopPropagation();
+    });
+
+    dragBarElement.addEventListener('pointermove', function(event) {
+        if (!isDragging) return;
+
+        const dx = event.clientX - startX;
+        const newWidthLeft = startWidthLeft + dx;
+        const newWidthRight = startWidthRight - dx;
+
+        // Adjust minimum width based on your needs
+        if (newWidthLeft > 0 && newWidthRight > 0) {
+            div_concepts_table_container.node().style.flex = `0 0 ${newWidthLeft}px`;
+            div_concept_detail_container.node().style.flex = `0 0 ${newWidthRight}px`;
+        } else if (newWidthLeft <= 0) {
+            // Snap to fully right
+            const totalWidth = concepts_row.node().getBoundingClientRect().width;
+            const dragBarWidth = 3;
+            div_concepts_table_container.node().style.flex = `0 0 0px`;
+            div_concept_detail_container.node().style.flex = `0 0 ${totalWidth - dragBarWidth}px`;
+        } else if (newWidthRight <= 0) {
+            // Snap to fully left
+            const totalWidth = concepts_row.node().getBoundingClientRect().width;
+            const dragBarWidth = 3;
+            div_concepts_table_container.node().style.flex = `0 0 ${totalWidth - dragBarWidth}px`;
+            div_concept_detail_container.node().style.flex = `0 0 0px`;
+        }
+
+        event.preventDefault();
+    });
+
+    dragBarElement.addEventListener('pointerup', function(event) {
+        if (isDragging) {
+            isDragging = false;
+            vis_container.node().classList.remove('dragging');
+            dragBarElement.releasePointerCapture(event.pointerId);
+
+            // Update state based on final positions (only if we actually dragged)
+            const leftWidth = div_concepts_table_container.node().getBoundingClientRect().width;
+            const rightWidth = div_concept_detail_container.node().getBoundingClientRect().width;
+
+            // Update the state tracker
+            if (rightWidth > 10) { // Use a threshold to avoid rounding issues
+                isRightPanelOpen = true;
+                lastOpenWidth = rightWidth;
+            } else {
+                isRightPanelOpen = false;
+                // Save the last width before closing, but only if it was previously open
+                if (startWidthRight > 10) {
+                    lastOpenWidth = startWidthRight;
+                }
+            }
+        }
+    });
+
+    dragBarElement.addEventListener('pointercancel', function(event) {
+        if (isDragging) {
+            isDragging = false;
+            vis_container.node().classList.remove('dragging');
+        }
+    });
+
+    let isRightPanelOpen = false; // Starts closed (drag bar on right)
+    let lastOpenWidth = null; // Not needed for this simple toggle
+
+    dragBarElement.addEventListener('dblclick', function(event) {
+        const totalWidth = concepts_row.node().getBoundingClientRect().width;
+        const dragBarWidth = 3;
+        const availableWidth = totalWidth - dragBarWidth;
+
+        // Determine current state based on actual widths
+        const currentLeftWidth = div_concepts_table_container.node().getBoundingClientRect().width;
+        const currentRightWidth = div_concept_detail_container.node().getBoundingClientRect().width;
+
+        if (currentLeftWidth <= 10) {
+            // Currently right full (drag bar on left), go to left full (drag bar on right)
+            div_concepts_table_container.node().style.flex = `0 0 ${availableWidth}px`;
+            div_concept_detail_container.node().style.flex = `0 0 0px`;
+            isRightPanelOpen = false;
+        } else if (currentRightWidth <= 10) {
+            // Currently left full (drag bar on right), go to right full (drag bar on left)
+            div_concepts_table_container.node().style.flex = `0 0 0px`;
+            div_concept_detail_container.node().style.flex = `0 0 ${availableWidth}px`;
+            isRightPanelOpen = true;
+        } else {
+            // Currently split, go to left full (drag bar on right)
+            div_concepts_table_container.node().style.flex = `0 0 ${availableWidth}px`;
+            div_concept_detail_container.node().style.flex = `0 0 0px`;
+            isRightPanelOpen = false;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+    });
+
+    //--------------------------------------------------------------------------------------------------
 
     // </editor-fold>
 
