@@ -194,23 +194,23 @@ function render({ model, el }) {
 
     // <editor-fold desc="---------- DEFINE DATA ----------">
 
-    var cohort1_meta = model.get('_cohort1_meta');
-    var cohort1_stats = model.get('_cohort1_stats');
-    var race_stats1 = model.get('_race_stats1');
-    var ethnicity_stats1 = model.get('_ethnicity_stats1');
-    var gender_dist1 = model.get('_gender_dist1');
-    var age_dist1 = model.get('_age_dist1');
-    var cohort1_shortname = model.get('_cohort1_shortname');
+    var cohort1_meta = model.get('_cohort1Metadata');
+    var cohort1_stats = model.get('_cohort1Stats');
+    var race_stats1 = model.get('_raceStats1');
+    var ethnicity_stats1 = model.get('_ethnicityStats1');
+    var gender_dist1 = model.get('_genderDist1');
+    var age_dist1 = model.get('_ageDist1');
+    var cohort1_shortname = model.get('_cohort1Shortname');
 
-    var cohort2_meta = model.get('_cohort2_meta');
-    var cohort2_stats = model.get('_cohort2_stats');
-    var race_stats2 = model.get('_race_stats2');
-    var ethnicity_stats2 = model.get('_ethnicity_stats2');
-    var gender_dist2 = model.get('_gender_dist2');
-    var age_dist2 = model.get('_age_dist2');
-    var cohort2_shortname = model.get('_cohort2_shortname');
+    var cohort2_meta = model.get('_cohort2Metadata');
+    var cohort2_stats = model.get('_cohort2Stats');
+    var race_stats2 = model.get('_raceStats2');
+    var ethnicity_stats2 = model.get('_ethnicityStats2');
+    var gender_dist2 = model.get('_genderDist2');
+    var age_dist2 = model.get('_ageDist2');
+    var cohort2_shortname = model.get('_cohort2Shortname');
 
-    var cond_hier = model.get('_cond_hier');
+    var cond_hier = model.get('_conditionsHierarchy');
     console.log('cond_hier', cond_hier);
 
     race_stats1 = renameKeys(race_stats1, ['race', 'race_count'], ['category', 'value']);
@@ -943,8 +943,17 @@ function render({ model, el }) {
             throw new Error("ConceptsTable: table_data is empty.");
         }
 
+        console.log('headers_text = ', headers_text);
+
         let columns_data;
         if(isSingleCohort()){
+            // columns_data = [
+            //     { text: headers_text[7], field: "depth", x: 0, width: 60, type: 'text' },
+            //     { text: headers_text[2], field: "concept_code",  x: 60,   width: 160 },
+            //     { text: headers_text[1], field: "concept_name",  x: 220, width: 530 },
+            //     { text: headers_text[8], field: "count_in_cohort", x: 750, width: 160 },
+            //     { text: headers_text[7], field: "prevalence", x: 910, width: 160 }
+            // ];
             columns_data = [
                 { text: headers_text[2], field: "concept_code",  x: 0,   width: 160 },
                 { text: headers_text[1], field: "concept_name",  x: 160, width: 590 },
@@ -954,17 +963,16 @@ function render({ model, el }) {
         }
         else{
             columns_data = [
-                { text: headers_text[2], field: "concept_code", x: 0, width: 160, type: 'text' },
-                { text: headers_text[1], field: "concept_name", x: 160, width: 350, type: 'text' },
-                { text: headers_text[9], field: "cohort2_prevalence", x: 510, width: 160, type: 'text' },
-                { text: headers_text[7], field: "difference_in_prevalence", x: 670, width: 240, type: 'compare_bars' },
-                { text: headers_text[8], field: "cohort1_prevalence", x: 910, width: 160, type: 'text' }
+                { text: headers_text[7], field: "depth", x: 0, width: 60, type: 'text' },
+                { text: headers_text[2], field: "concept_code", x: 60, width: 140, type: 'text' },
+                { text: headers_text[1], field: "concept_name", x: 200, width: 350, type: 'text' },
+                { text: headers_text[10], field: "cohort2_prevalence", x: 550, width: 140, type: 'text' },
+                { text: headers_text[8], field: "difference_in_prevalence", x: 690, width: 240, type: 'compare_bars' },
+                { text: headers_text[9], field: "cohort1_prevalence", x: 930, width: 140, type: 'text' }
             ];
         }
 
         const total_table_width = d3.sum(columns_data, d => d.width);
-
-        console.log('columns_data', columns_data);
 
         const headers_svg = container.append("svg")
             .attr("width", total_table_width)
