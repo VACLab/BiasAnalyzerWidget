@@ -182,7 +182,6 @@ class CohortViewer(anywidget.AnyWidget):
 
         # TODO: Change this so that we can recurse even if there is not a significant difference,
         #       so that we can scent/hint at lower significances
-        # TODO: Figure out significance params and logic
         def recurse(node, cohort1_nobs, cohort2_nobs, depth):
 
             def add_keep_node(a_node):
