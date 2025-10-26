@@ -1492,6 +1492,8 @@ function render({ model, el }) {
         function onRowSelect(rowData, isSelected) {
             console.log(`Row ${isSelected ? 'selected' : 'deselected'}:`, rowData);
             // TODO: add selection logic here
+            // get parents and children
+            // show in new table
         }
 
         function updateTableBody() {
@@ -1651,7 +1653,7 @@ function render({ model, el }) {
     const demographics_row = vis_container.append('div').attr('class', 'row-container');
     const div_gender = demographics_row.append('div').attr('class', 'col-container');
     const div_race = demographics_row.append('div').attr('class', 'col-container');
-    // const div_ethnicity = demographics_row.append('div').attr('class', 'col-container');
+    const div_ethnicity = demographics_row.append('div').attr('class', 'col-container');
     const div_age = demographics_row.append('div').attr('class', 'col-container');
 
     // concepts row
@@ -1817,12 +1819,12 @@ function render({ model, el }) {
             {series2: series2_data, dimensions: {xlabel: 'race'}})
     );
 
-    // series2_data = cohort2_exists ?
-    //     {data: ethnicity_stats2, shortname: cohort2_shortname, total_count: cohort2_stats[0].total_count} : {};
-    // div_ethnicity.append(() =>
-    //     VerticalBarChart({data: ethnicity_stats1, shortname: cohort1_shortname, total_count: cohort1_stats[0].total_count},
-    //         {series2: series2_data, dimensions: {xlabel: 'ethnicity'}})
-    // );
+    series2_data = cohort2_exists ?
+        {data: ethnicity_stats2, shortname: cohort2_shortname, total_count: cohort2_stats[0].total_count} : {};
+    div_ethnicity.append(() =>
+        VerticalBarChart({data: ethnicity_stats1, shortname: cohort1_shortname, total_count: cohort1_stats[0].total_count},
+            {series2: series2_data, dimensions: {xlabel: 'ethnicity'}})
+    );
 
     series2_data = cohort2_exists ?
         {data: age_dist2, shortname: cohort2_shortname, total_count: cohort2_stats[0].total_count} : {};

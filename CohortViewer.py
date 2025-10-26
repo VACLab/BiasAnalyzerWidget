@@ -182,6 +182,7 @@ class CohortViewer(anywidget.AnyWidget):
 
         # TODO: Change this so that we can recurse even if there is not a significant difference,
         #       so that we can scent/hint at lower significances
+        # TODO: pass in alpha value; should be updatable from user input
         def recurse(node, cohort1_nobs, cohort2_nobs, depth):
 
             def add_keep_node(a_node):
@@ -195,7 +196,6 @@ class CohortViewer(anywidget.AnyWidget):
                 c1 = a_node.get_metrics(cohort_id_1)
                 c2 = a_node.get_metrics(cohort_id_2)
 
-                # ADD THIS CHECK BEFORE ACCESSING THE KEYS
                 if not c1 or 'prevalence' not in c1 or not c2 or 'prevalence' not in c2:
                     return None
 
@@ -207,19 +207,29 @@ class CohortViewer(anywidget.AnyWidget):
 
             def is_significant_diff(stats1, stats2, alpha=0.05, tails=2):
                 diff_diff = stats1["diff"] - stats2["diff"]
-                # Standard error
                 se = math.sqrt(stats1["variance"] + stats2["variance"])
-                z = diff_diff / se if se != 0 else float("nan")
-                chi2 = z ** 2
+
+                # If no variance, can't determine significance
+                if se == 0:
+                    return False
+
+                z = diff_diff / se
 
                 if tails == 2:
-                    p_value = 2 * (1 - norm.cdf(abs(z)))  # two-tailed
+                    p_value = 2 * (1 - norm.cdf(abs(z)))
                 elif tails == 1:
-                    p_value = 1 - norm.cdf(z)  # one-tailed (right tail)
+                    p_value = 1 - norm.cdf(z)
                 else:
                     raise ValueError("tails must be 1 or 2")
 
-                return p_value < alpha  # return significant or not
+                return p_value < alpha
+
+            def find_child_stats(stats_list, node):
+                for stats in stats_list:
+                    # print(f"stats = {stats}")
+                    if stats["concept_code"] == node['concept_code']:
+                        return stats
+                return None
 
             children = node.children
             if len(children) == 0:
@@ -230,7 +240,6 @@ class CohortViewer(anywidget.AnyWidget):
             parent_stats = get_node_stats(node)
             do_recurse = False
             children_stats = []  # diff, variance for each child node
-            alpha = 0.05  # TODO: initialize higher up and pass it in; should be updatable from user input
             signif_children = []  # significant nodes
 
             # get stats for each child
@@ -242,7 +251,7 @@ class CohortViewer(anywidget.AnyWidget):
             # compare each pair of children to get significances
             for c1, c2 in itertools.combinations(children_stats, 2):
                 # print(f"c1: {c1}, c2: {c2}")
-                significant = is_significant_diff(c1, c2, alpha, 2)
+                significant = is_significant_diff(c1, c2)
 
                 if significant:
                     signif_children.append(c1)
@@ -250,13 +259,6 @@ class CohortViewer(anywidget.AnyWidget):
 
             # we now have a list of child nodes that are significantly different from each other
             # now, for each significant node we need to compare variance with parent
-
-            def find_child_stats(stats_list, node):
-                for stats in stats_list:
-                    # print(f"stats = {stats}")
-                    if stats["concept_code"] == node['concept_code']:
-                        return stats
-                return None
 
             for child in signif_children:
                 # we only need one child to be higher, so if we already have one we can stop looking
