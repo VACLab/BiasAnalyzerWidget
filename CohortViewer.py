@@ -205,22 +205,33 @@ class CohortViewer(anywidget.AnyWidget):
                 return {"concept_code": a_node.code, "diff": diff, "variance": var, "p_c1": c1['prevalence'], "p_c2": c2['prevalence'],
                         "n1": c1["count"], "n2": c2["count"]}
 
-            def is_significant_diff(stats1, stats2, alpha=0.05, tails=2):
+            # TODO: initialize higher up and pass it in; should be updatable from user input
+            def is_significant_diff(stats1, stats2, alpha=0.01, tails=2):
                 diff_diff = stats1["diff"] - stats2["diff"]
-                # Standard error
                 se = math.sqrt(stats1["variance"] + stats2["variance"])
-                z = diff_diff / se if se != 0 else float("nan")
-                chi2 = z ** 2
+
+                if se == 0:
+                    return False  # if no variance, can't determine significance
+
+                z = diff_diff / se
 
                 if tails == 2:
-                    p_value = 2 * (1 - norm.cdf(abs(z)))  # two-tailed
+                    p_value = 2 * (1 - norm.cdf(abs(z)))
                 elif tails == 1:
-                    p_value = 1 - norm.cdf(z)  # one-tailed (right tail)
+                    p_value = 1 - norm.cdf(z)
                 else:
                     raise ValueError("tails must be 1 or 2")
 
-                return p_value < alpha  # return significant or not
+                return p_value < alpha
 
+            def find_child_stats(stats_list, node):
+                for stats in stats_list:
+                    # print(f"stats = {stats}")
+                    if stats["concept_code"] == node['concept_code']:
+                        return stats
+                return None
+
+            # if there are no children, keep the parent
             children = node.children
             if len(children) == 0:
                 add_keep_node(node)
@@ -230,19 +241,18 @@ class CohortViewer(anywidget.AnyWidget):
             parent_stats = get_node_stats(node)
             do_recurse = False
             children_stats = []  # diff, variance for each child node
-            alpha = 0.05  # TODO: initialize higher up and pass it in; should be updatable from user input
             signif_children = []  # significant nodes
 
             # get stats for each child
             for child in node.children:
                 stats = get_node_stats(child)
-                if stats is not None:  # Only add if we got valid stats
+                if stats is not None:
                     children_stats.append(stats)
 
             # compare each pair of children to get significances
             for c1, c2 in itertools.combinations(children_stats, 2):
                 # print(f"c1: {c1}, c2: {c2}")
-                significant = is_significant_diff(c1, c2, alpha, 2)
+                significant = is_significant_diff(c1, c2)
 
                 if significant:
                     signif_children.append(c1)
@@ -250,13 +260,6 @@ class CohortViewer(anywidget.AnyWidget):
 
             # we now have a list of child nodes that are significantly different from each other
             # now, for each significant node we need to compare variance with parent
-
-            def find_child_stats(stats_list, node):
-                for stats in stats_list:
-                    # print(f"stats = {stats}")
-                    if stats["concept_code"] == node['concept_code']:
-                        return stats
-                return None
 
             for child in signif_children:
                 # we only need one child to be higher, so if we already have one we can stop looking
@@ -380,6 +383,7 @@ class CohortViewer(anywidget.AnyWidget):
         # print("getting interesting condition occurrences")
         if self.isJsonMode:
             # if we are loading from json, just use the file that was loaded
+            # this also means that there is no depth calculation in json mode
             interesting_conditions = self._conditionsHierarchy
         else:
             # print(f"total node count = {count_all_nodes(self._conditionsHierarchy.get_root_nodes()[0].to_dict())}")
