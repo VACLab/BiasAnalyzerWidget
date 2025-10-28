@@ -227,12 +227,6 @@ function render({ model, el }) {
     if(dataEntityExists(age_dist2))
         age_dist2 = renameKeys(age_dist2, ['age_bin', 'bin_count'], ['category', 'value']);
 
-    // TODO: Ask Hong to fix this in her code. This is a temporary fix for gender probabilities being out of 100,
-    //       when other probabilities are out of 1
-    gender_dist1 = d3.map(gender_dist1, d => ({ ...d, probability: d.probability / 100 }));
-    if (dataEntityExists(gender_dist2))
-        gender_dist2 = d3.map(gender_dist2, d => ({ ...d, probability: d.probability / 100 }));
-
     function isSingleCohort(){
         return Object.keys(cond_hier[0]['metrics']).length === 1;
     }
