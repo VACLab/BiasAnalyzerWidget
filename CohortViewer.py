@@ -205,8 +205,10 @@ class CohortViewer(anywidget.AnyWidget):
                 return {"concept_code": a_node.code, "diff": diff, "variance": var, "p_c1": c1['prevalence'], "p_c2": c2['prevalence'],
                         "n1": c1["count"], "n2": c2["count"]}
 
-            def is_significant_diff(stats1, stats2, alpha=0.05, tails=2):
+            # TODO: initialize higher up and pass it in; should be updatable from user input
+            def is_significant_diff(stats1, stats2, alpha=0.01, tails=2):
                 diff_diff = stats1["diff"] - stats2["diff"]
+                # Standard error
                 se = math.sqrt(stats1["variance"] + stats2["variance"])
 
                 # If no variance, can't determine significance
@@ -222,7 +224,7 @@ class CohortViewer(anywidget.AnyWidget):
                 else:
                     raise ValueError("tails must be 1 or 2")
 
-                return p_value < alpha
+                return p_value < alpha  # return significant or not
 
             def find_child_stats(stats_list, node):
                 for stats in stats_list:
@@ -231,6 +233,7 @@ class CohortViewer(anywidget.AnyWidget):
                         return stats
                 return None
 
+            # if there are no children, keep the parent
             children = node.children
             if len(children) == 0:
                 add_keep_node(node)
@@ -245,7 +248,7 @@ class CohortViewer(anywidget.AnyWidget):
             # get stats for each child
             for child in node.children:
                 stats = get_node_stats(child)
-                if stats is not None:  # Only add if we got valid stats
+                if stats is not None:
                     children_stats.append(stats)
 
             # compare each pair of children to get significances
