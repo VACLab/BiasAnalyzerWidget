@@ -18,6 +18,8 @@ function render({ model, el }) {
     const conceptsTableDispatcher = d3.dispatch('filter', 'sort', 'change-dp', 'column-resize', 'view-pct');
     // handles all tooltips
     const tooltipDispatcher = d3.dispatch("show", "hide");
+    // handles conditions drag bar
+    const conceptsDragbarDispatcher = d3.dispatch("click", 'dragstart', 'drag', 'dragend', 'toggle');
 
     tooltipDispatcher.on("show", function({ content, event }) {
         const containerRect = vis_container.node().getBoundingClientRect();
@@ -238,6 +240,267 @@ function render({ model, el }) {
     function createTooltip() {
         return vis_container.append("div")
             .attr("class", "tooltip");
+    }
+
+    /*
+    * Converts 3 divs into 2 panels and a dragbar
+    * Parameters:
+    *   dispatch: an instance of d3.dispatch
+    *   dragBar: dragbar div
+    *   leftContainer: left panel div
+    *   rightContainer: right panel div
+    *   parentContainer: parent container
+    *   visContainer: overall vis container
+    *   dragBarWidth = 3 : dragbar width,
+    *   initialRightPanelOpen = false : whether to start with the right panel open
+    * Return:
+    *   state of dragbar and 2 panels
+    */
+    function MakeDragBar(config) {
+        const {
+            dispatch,
+            dragBar,
+            leftContainer,
+            rightContainer,
+            parentContainer,
+            visContainer,
+            dragBarWidth = 3,
+            initialRightPanelOpen = false
+        } = config;
+
+        // Create SVG grip icon
+        const gripIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        gripIcon.setAttribute('width', '6');
+        gripIcon.setAttribute('height', '20');
+        gripIcon.setAttribute('viewBox', '0 0 6 20');
+        gripIcon.style.pointerEvents = 'none';
+        const circle_r = "1.5";
+        gripIcon.innerHTML = `
+            <circle cx="2" cy="5" r="${circle_r}" fill="#999"/>
+            <circle cx="2" cy="10" r="${circle_r}" fill="#999"/>
+            <circle cx="2" cy="15" r="${circle_r}" fill="#999"/>
+            <circle cx="4" cy="5" r="${circle_r}" fill="#999"/>
+            <circle cx="4" cy="10" r="${circle_r}" fill="#999"/>
+            <circle cx="4" cy="15" r="${circle_r}" fill="#999"/>
+        `;
+
+        // State
+        let isDragging = false;
+        let startX = 0;
+        let startWidthLeft = 0;
+        let startWidthRight = 0;
+        let isRightPanelOpen = initialRightPanelOpen;
+        let lastOpenWidth = null;
+
+        const dragBarElement = dragBar.node();
+        const leftNode = leftContainer.node();
+        const rightNode = rightContainer.node();
+        const parentNode = parentContainer.node();
+        const visNode = visContainer.node();
+
+        // Style the drag bar
+        dragBarElement.style.cursor = 'col-resize';
+        dragBarElement.style.background = '#e0e0e0';
+        dragBarElement.style.display = 'flex';
+        dragBarElement.style.alignItems = 'center';
+        dragBarElement.style.justifyContent = 'center';
+        dragBarElement.style.transition = 'background 0.2s';
+
+        // Add the grip icon
+        dragBarElement.appendChild(gripIcon);
+
+        // Helper function to update panel widths
+        function updatePanelWidths(newWidthLeft, newWidthRight) {
+            leftNode.style.flex = `0 0 ${newWidthLeft}px`;
+            rightNode.style.flex = `0 0 ${newWidthRight}px`;
+        }
+
+        // Helper function to snap panels
+        function snapPanels(dx) {
+            const totalWidth = parentNode.getBoundingClientRect().width;
+            const availableWidth = totalWidth - dragBarWidth;
+
+            const newWidthLeft = startWidthLeft + dx;
+            const newWidthRight = startWidthRight - dx;
+
+            if (newWidthLeft > 0 && newWidthRight > 0) {
+                updatePanelWidths(newWidthLeft, newWidthRight);
+            } else if (newWidthLeft <= 0) {
+                // Snap to fully right
+                updatePanelWidths(0, availableWidth);
+            } else if (newWidthRight <= 0) {
+                // Snap to fully left
+                updatePanelWidths(availableWidth, 0);
+            }
+        }
+
+        // Helper function to update hover state
+        function updateHoverState(isHovering) {
+            dragBarElement.style.background = isHovering ? '#d0d0d0' : '#e0e0e0';
+            const circles = gripIcon.querySelectorAll('circle');
+            circles.forEach(circle => circle.setAttribute('fill', isHovering ? '#666' : '#999'));
+        }
+
+        // Event handlers
+        function onMouseEnter() {
+            updateHoverState(true);
+        }
+
+        function onMouseLeave() {
+            if (!isDragging) {
+                updateHoverState(false);
+            }
+        }
+
+        function onPointerDown(event) {
+            isDragging = true;
+            startX = event.clientX;
+
+            const tableRect = leftNode.getBoundingClientRect();
+            const detailRect = rightNode.getBoundingClientRect();
+
+            startWidthLeft = tableRect.width;
+            startWidthRight = detailRect.width;
+
+            visNode.classList.add('dragging');
+            dragBarElement.style.background = '#c0c0c0';
+
+            dragBarElement.setPointerCapture(event.pointerId);
+
+            dispatch.call('dragstart', null, { startWidthLeft, startWidthRight });
+
+            event.preventDefault();
+            event.stopPropagation();
+        }
+
+        function onPointerMove(event) {
+            if (!isDragging) return;
+
+            const dx = event.clientX - startX;
+            snapPanels(dx);
+
+            dispatch.call('drag', null, {
+                dx,
+                currentWidthLeft: leftNode.getBoundingClientRect().width,
+                currentWidthRight: rightNode.getBoundingClientRect().width
+            });
+
+            event.preventDefault();
+        }
+
+        function onPointerUp(event) {
+            if (isDragging) {
+                isDragging = false;
+                visNode.classList.remove('dragging');
+                dragBarElement.style.background = '#e0e0e0';
+                dragBarElement.releasePointerCapture(event.pointerId);
+
+                const leftWidth = leftNode.getBoundingClientRect().width;
+                const rightWidth = rightNode.getBoundingClientRect().width;
+
+                // Update the state tracker
+                if (rightWidth > 10) {
+                    isRightPanelOpen = true;
+                    lastOpenWidth = rightWidth;
+                } else {
+                    isRightPanelOpen = false;
+                    if (startWidthRight > 10) {
+                        lastOpenWidth = startWidthRight;
+                    }
+                }
+
+                dispatch.call('dragend', null, { leftWidth, rightWidth, isRightPanelOpen });
+            }
+        }
+
+        function onPointerCancel(event) {
+            if (isDragging) {
+                isDragging = false;
+                visNode.classList.remove('dragging');
+                dragBarElement.style.background = '#e0e0e0';
+            }
+        }
+
+        function onDoubleClick(event) {
+            const totalWidth = parentNode.getBoundingClientRect().width;
+            const availableWidth = totalWidth - dragBarWidth;
+
+            const currentLeftWidth = leftNode.getBoundingClientRect().width;
+            const currentRightWidth = rightNode.getBoundingClientRect().width;
+
+            let newState;
+
+            if (currentLeftWidth <= 10) {
+                // Currently right full, go to left full
+                updatePanelWidths(availableWidth, 0);
+                isRightPanelOpen = false;
+                newState = 'left-full';
+            } else if (currentRightWidth <= 10) {
+                // Currently left full, go to right full
+                updatePanelWidths(0, availableWidth);
+                isRightPanelOpen = true;
+                newState = 'right-full';
+            } else {
+                // Currently split, go to left full
+                updatePanelWidths(availableWidth, 0);
+                isRightPanelOpen = false;
+                newState = 'left-full';
+            }
+
+            dispatch.call('toggle', null, { state: newState, isRightPanelOpen });
+
+            event.preventDefault();
+            event.stopPropagation();
+        }
+
+        // Attach event listeners
+        dragBarElement.addEventListener('mouseenter', onMouseEnter);
+        dragBarElement.addEventListener('mouseleave', onMouseLeave);
+        dragBarElement.addEventListener('pointerdown', onPointerDown);
+        dragBarElement.addEventListener('pointermove', onPointerMove);
+        dragBarElement.addEventListener('pointerup', onPointerUp);
+        dragBarElement.addEventListener('pointercancel', onPointerCancel);
+        dragBarElement.addEventListener('dblclick', onDoubleClick);
+
+        // Public API
+        return {
+            dispatch,
+            destroy() {
+                dragBarElement.removeEventListener('mouseenter', onMouseEnter);
+                dragBarElement.removeEventListener('mouseleave', onMouseLeave);
+                dragBarElement.removeEventListener('pointerdown', onPointerDown);
+                dragBarElement.removeEventListener('pointermove', onPointerMove);
+                dragBarElement.removeEventListener('pointerup', onPointerUp);
+                dragBarElement.removeEventListener('pointercancel', onPointerCancel);
+                dragBarElement.removeEventListener('dblclick', onDoubleClick);
+                if (gripIcon.parentNode) {
+                    gripIcon.parentNode.removeChild(gripIcon);
+                }
+            },
+            getState() {
+                return {
+                    isRightPanelOpen,
+                    lastOpenWidth,
+                    leftWidth: leftNode.getBoundingClientRect().width,
+                    rightWidth: rightNode.getBoundingClientRect().width
+                };
+            },
+            setState(state) {
+                const totalWidth = parentNode.getBoundingClientRect().width;
+                const availableWidth = totalWidth - dragBarWidth;
+
+                if (state === 'left-full') {
+                    updatePanelWidths(availableWidth, 0);
+                    isRightPanelOpen = false;
+                } else if (state === 'right-full') {
+                    updatePanelWidths(0, availableWidth);
+                    isRightPanelOpen = true;
+                } else if (state === 'split' && lastOpenWidth) {
+                    updatePanelWidths(availableWidth - lastOpenWidth, lastOpenWidth);
+                    isRightPanelOpen = true;
+                }
+            }
+        };
     }
 
     /*
@@ -1233,7 +1496,7 @@ function render({ model, el }) {
         function renderTableCells(row) {
             const dafault_prevalence = 0;
 
-            // Add click handler to the row group itself
+            // Add click handler to the row group
             row.attr("cursor", "pointer")
                 .on("click", function(event, d) {
                     // Get a unique identifier for this row (adjust based on your data structure)
@@ -1488,6 +1751,8 @@ function render({ model, el }) {
             // TODO: add selection logic here
             // get parents and children
             // show in new table
+            // we should call the click event to show the right panel only after the new table is ready to show
+            conceptsDragbarDispatcher.call("click", this, e.target.value);
         }
 
         function updateTableBody() {
@@ -1666,127 +1931,15 @@ function render({ model, el }) {
     // the container row for the concepts table itself
     const div_concepts_table = div_concepts_table_container.append('div').attr('class', 'row-container');
 
-    // -------------------------------------------------------------------------------------------------
-
-    let isDragging = false;
-    let startX = 0;
-    let startWidthLeft = 0;
-    let startWidthRight = 0;
-
-    const dragBarElement = drag_bar.node();
-
-    dragBarElement.addEventListener('pointerdown', function(event) {
-        isDragging = true;
-        startX = event.clientX;
-
-        const tableRect = div_concepts_table_container.node().getBoundingClientRect();
-        const detailRect = div_concept_detail_container.node().getBoundingClientRect();
-
-        startWidthLeft = tableRect.width;
-        startWidthRight = detailRect.width;
-
-        vis_container.node().classList.add('dragging');
-
-        // Capture pointer events
-        dragBarElement.setPointerCapture(event.pointerId);
-
-        event.preventDefault();
-        event.stopPropagation();
+    // Add resizing functionality to the structure you created
+    const resizablePanel = MakeDragBar({
+        dispatch: conceptsDragbarDispatcher,
+        dragBar: drag_bar,
+        leftContainer: div_concepts_table_container,
+        rightContainer: div_concept_detail_container,
+        parentContainer: concepts_row,
+        visContainer: vis_container
     });
-
-    dragBarElement.addEventListener('pointermove', function(event) {
-        if (!isDragging) return;
-
-        const dx = event.clientX - startX;
-        const newWidthLeft = startWidthLeft + dx;
-        const newWidthRight = startWidthRight - dx;
-
-        // Adjust minimum width based on your needs
-        if (newWidthLeft > 0 && newWidthRight > 0) {
-            div_concepts_table_container.node().style.flex = `0 0 ${newWidthLeft}px`;
-            div_concept_detail_container.node().style.flex = `0 0 ${newWidthRight}px`;
-        } else if (newWidthLeft <= 0) {
-            // Snap to fully right
-            const totalWidth = concepts_row.node().getBoundingClientRect().width;
-            const dragBarWidth = 3;
-            div_concepts_table_container.node().style.flex = `0 0 0px`;
-            div_concept_detail_container.node().style.flex = `0 0 ${totalWidth - dragBarWidth}px`;
-        } else if (newWidthRight <= 0) {
-            // Snap to fully left
-            const totalWidth = concepts_row.node().getBoundingClientRect().width;
-            const dragBarWidth = 3;
-            div_concepts_table_container.node().style.flex = `0 0 ${totalWidth - dragBarWidth}px`;
-            div_concept_detail_container.node().style.flex = `0 0 0px`;
-        }
-
-        event.preventDefault();
-    });
-
-    dragBarElement.addEventListener('pointerup', function(event) {
-        if (isDragging) {
-            isDragging = false;
-            vis_container.node().classList.remove('dragging');
-            dragBarElement.releasePointerCapture(event.pointerId);
-
-            // Update state based on final positions (only if we actually dragged)
-            const leftWidth = div_concepts_table_container.node().getBoundingClientRect().width;
-            const rightWidth = div_concept_detail_container.node().getBoundingClientRect().width;
-
-            // Update the state tracker
-            if (rightWidth > 10) { // Use a threshold to avoid rounding issues
-                isRightPanelOpen = true;
-                lastOpenWidth = rightWidth;
-            } else {
-                isRightPanelOpen = false;
-                // Save the last width before closing, but only if it was previously open
-                if (startWidthRight > 10) {
-                    lastOpenWidth = startWidthRight;
-                }
-            }
-        }
-    });
-
-    dragBarElement.addEventListener('pointercancel', function(event) {
-        if (isDragging) {
-            isDragging = false;
-            vis_container.node().classList.remove('dragging');
-        }
-    });
-
-    let isRightPanelOpen = false; // Starts closed (drag bar on right)
-    let lastOpenWidth = null; // Not needed for this simple toggle
-
-    dragBarElement.addEventListener('dblclick', function(event) {
-        const totalWidth = concepts_row.node().getBoundingClientRect().width;
-        const dragBarWidth = 3;
-        const availableWidth = totalWidth - dragBarWidth;
-
-        // Determine current state based on actual widths
-        const currentLeftWidth = div_concepts_table_container.node().getBoundingClientRect().width;
-        const currentRightWidth = div_concept_detail_container.node().getBoundingClientRect().width;
-
-        if (currentLeftWidth <= 10) {
-            // Currently right full (drag bar on left), go to left full (drag bar on right)
-            div_concepts_table_container.node().style.flex = `0 0 ${availableWidth}px`;
-            div_concept_detail_container.node().style.flex = `0 0 0px`;
-            isRightPanelOpen = false;
-        } else if (currentRightWidth <= 10) {
-            // Currently left full (drag bar on right), go to right full (drag bar on left)
-            div_concepts_table_container.node().style.flex = `0 0 0px`;
-            div_concept_detail_container.node().style.flex = `0 0 ${availableWidth}px`;
-            isRightPanelOpen = true;
-        } else {
-            // Currently split, go to left full (drag bar on right)
-            div_concepts_table_container.node().style.flex = `0 0 ${availableWidth}px`;
-            div_concept_detail_container.node().style.flex = `0 0 0px`;
-            isRightPanelOpen = false;
-        }
-
-        event.preventDefault();
-        event.stopPropagation();
-    });
-
-    //--------------------------------------------------------------------------------------------------
 
     // </editor-fold>
 
