@@ -1,12 +1,14 @@
 import anywidget
 import traitlets as t
 import pathlib
-# import json # uncomment this for saving json to file
+import json # uncomment this for saving json to file
 from datetime import datetime, date
 from decimal import Decimal
 import itertools
 from scipy.stats import norm
 import math
+import inspect
+
 # import numpy as np
 # from biasanalyzer.background.threading_utils import run_in_background
 
@@ -14,6 +16,7 @@ class CohortViewer(anywidget.AnyWidget):
     _esm = pathlib.Path(__file__).parent / "index.js"
     _css = pathlib.Path(__file__).parent / "index.css"
     initialized = t.Bool(default_value=False).tag(sync=True)
+    _conditionsHierarchy = None  # class object of the whole tree
 
     # List of developer-only keys
     _devKeys = [
@@ -75,7 +78,71 @@ class CohortViewer(anywidget.AnyWidget):
 
             # print('finished saving data to files')
 
-    # Convert non-JSON-serializable objects to JSON-compatible types
+    # Communication channels
+    request = t.Unicode('').tag(sync=True)
+    response = t.Unicode('').tag(sync=True)
+
+    @t.observe('request')
+    def _handle_request(self, change):
+        """Handle incoming requests from JavaScript"""
+        if not change['new']:
+            return
+
+        try:
+            request_data = json.loads(change['new'])
+            request_id = request_data.get('id')
+            request_type = request_data.get('type')
+            params = request_data.get('params', {})
+
+            # Route to appropriate handler
+            result = self._process_request(request_type, params)
+
+            # Send response back
+            response_data = {
+                'id': request_id,
+                'type': request_type,
+                'data': result,
+                'success': True
+            }
+            self.response = json.dumps(response_data)
+
+        except Exception as e:
+            # Send error response
+            response_data = {
+                'id': request_data.get('id'),
+                'type': request_data.get('type'),
+                'error': str(e),
+                'success': False
+            }
+            self.response = json.dumps(response_data)
+
+    def _process_request(self, request_type, params):
+        """Route requests to appropriate handlers"""
+        if request_type == 'get_parent_nodes':
+            return self._get_parent_nodes(params)
+        # ... other handlers
+        else:
+            raise ValueError(f"Unknown request type: {request_type}")
+
+    def _get_parent_nodes(self, params):
+
+        """Get parents of a node"""
+        node_id = params.get('node_id')
+        parent_ids = params.get('parent_ids')
+
+        # self.log_object_type('_get_parent_nodes', self._conditionsHierarchy)
+        # self.log_object_type('_get_parent_nodes - parent_ids', parent_ids)
+
+        result = {}
+        result = {'parents': []}  # Initialize with 'parents' key as a list
+        for parent_id in parent_ids:
+            parent_node = self._conditionsHierarchy.get_node(parent_id)
+            result['parents'].append(parent_node.to_dict())
+        # self.log_object_type('_get_parent_nodes - result', result)
+        return result
+
+
+# Convert non-JSON-serializable objects to JSON-compatible types
     def make_json_serializable(self, obj):
         if isinstance(obj, dict):
             return {key: self.make_json_serializable(value) for key, value in obj.items()}
@@ -109,6 +176,7 @@ class CohortViewer(anywidget.AnyWidget):
             )
 
         super().__init__()
+        self.log_file = open('./debug.log', 'a', buffering=1)  # Line buffered
 
         # READ PARAMETERS
 
@@ -136,9 +204,26 @@ class CohortViewer(anywidget.AnyWidget):
         self._genderDist2 = kwargs.get('genderDist2')
         self._ageDist2 = kwargs.get('ageDist2')
 
-        self._conditionsHierarchy = kwargs.get('condHier')
+        self._interestingConditions = kwargs.get('condHier')
 
         self.initialized = True
+
+    def log(self, message):
+        import datetime
+        timestamp = datetime.datetime.now().strftime('%H:%M:%S.%f')[:-3]
+        self.log_file.write(f"[{timestamp}] {message}\n")
+        self.log_file.flush()
+
+    def clear_log(self):
+        """Clear the log output"""
+        if self.log_output:
+            self.log_output.clear_output()
+
+    def log_object_type(self, msg, obj):
+        self.log(msg)
+        self.log(f"Type: {type(obj)}")
+        self.log(f"Type name: {type(obj).__name__}")
+        self.log(f"Value: {obj}")
 
     def create_trait(self, name, trait_type, value):
         if not value is None:
@@ -331,7 +416,7 @@ class CohortViewer(anywidget.AnyWidget):
             self._ethnicityStats1 = self.make_json_serializable(self._cohort1.get_stats('ethnicity'))
             self._genderDist1 = self.make_json_serializable(self._cohort1.get_distributions('gender'))
             self._ageDist1 = self.make_json_serializable(self._cohort1.get_distributions('age'))
-            conds1, self._condHier1 = self._cohort1.get_concept_stats()
+            self._condHier1 = self._cohort1.get_concept_stats()[1]
 
             if self._cohort2 is not None:
                 self._cohort2Metadata = self.make_json_serializable(self._cohort2.metadata)
@@ -340,15 +425,12 @@ class CohortViewer(anywidget.AnyWidget):
                 self._ethnicityStats2 = self.make_json_serializable(self._cohort2.get_stats('ethnicity'))
                 self._genderDist2 = self.make_json_serializable(self._cohort2.get_distributions('gender'))
                 self._ageDist2 = self.make_json_serializable(self._cohort2.get_distributions('age'))
-                conds2, self._condHier2 = self._cohort2.get_concept_stats()
+                self._condHier2 = self._cohort2.get_concept_stats()[1]
 
                 self._conditionsHierarchy = self._condHier1.union(self._condHier2)
             else:
                 self._conditionsHierarchy = self._condHier1
-
             # print(f'self._conditionsHierarchy = {self._conditionsHierarchy}')
-            # root = self._conditionsHierarchy.get_root_nodes(serialization=True)[0]["node_metrics"][1]['probability']
-            # print(f'root = {root}')
 
         # Give data to traitlets, mostly as lists of dictionaries
 
@@ -382,10 +464,12 @@ class CohortViewer(anywidget.AnyWidget):
             self.create_trait('_ageDist2', t.List(t.Dict()), self._ageDist2)
             self.create_trait('_cohort2Shortname', t.Unicode(), self._cohort2Shortname)
 
+        # self.log_object_type('about to get interesting conditions', self._conditionsHierarchy)
+
         # print("getting interesting condition occurrences")
         if self.isJsonMode:
             # if we are loading from json, just use the file that was loaded
-            interesting_conditions = self._conditionsHierarchy
+            interesting_conditions = self._interestingConditions
         else:
             # print(f"total node count = {count_all_nodes(self._conditionsHierarchy.get_root_nodes()[0].to_dict())}")
             if not self.is_empty(self._cohort2Metadata):
@@ -408,6 +492,7 @@ class CohortViewer(anywidget.AnyWidget):
         # thread = run_in_background(self.saveToFiles, on_complete=on_save_complete)
         # self.saveToFiles() # synchronous save files
 
-        self.create_trait('_conditionsHierarchy', t.List(t.Dict()), interesting_conditions)
+        self._interestingConditions = interesting_conditions
+        self.create_trait('_interestingConditions', t.List(t.Dict()), interesting_conditions)
 
         # print("initialization completed")

@@ -10,12 +10,63 @@ import * as Inputs from "https://esm.sh/@observablehq/inputs";
 // } // end initialize
 
 function render({ model, el }) {
+
     const font_size = '12px';
+
+    // <editor-fold desc="---------- REQUEST MANAGER ----------">
+
+    // Reusable RequestManager
+    class RequestManager {
+        constructor(model) {
+            this.model = model;
+            this.pendingRequests = new Map();
+            this.requestId = 0;
+
+            model.on("change:response", () => {
+                this.handleResponse(model.get("response"));
+            });
+        }
+
+        async request(type, params = {}) {
+            return new Promise((resolve, reject) => {
+                const id = ++this.requestId;
+                this.pendingRequests.set(id, { resolve, reject });
+
+                const requestData = { id, type, params };
+                this.model.set("request", JSON.stringify(requestData));
+                this.model.save_changes();
+            });
+        }
+
+        handleResponse(responseJson) {
+            // TODO: debug in browser
+            if (!responseJson) return;
+
+            const response = JSON.parse(responseJson);
+            const { id, success, data, error } = response;
+
+            const pending = this.pendingRequests.get(id);
+            if (pending) {
+                if (success) {
+                    pending.resolve(data);
+                } else {
+                    pending.reject(new Error(error));
+                }
+                this.pendingRequests.delete(id);
+            }
+        }
+    }
+
+    const requestManager = new RequestManager(model);
+
+    // </editor-fold>
 
     // <editor-fold desc="---------- DISPATCHERS ----------">
 
     // handles the concepts table
     const conceptsTableDispatcher = d3.dispatch('filter', 'sort', 'change-dp', 'column-resize', 'view-pct');
+    // handles the hierarchy table
+    const hierarchyTableDispatcher = d3.dispatch('filter', 'sort', 'change-dp', 'column-resize', 'view-pct');
     // handles all tooltips
     const tooltipDispatcher = d3.dispatch("show", "hide");
     // handles conditions drag bar
@@ -212,7 +263,7 @@ function render({ model, el }) {
     var age_dist2 = model.get('_ageDist2');
     var cohort2_shortname = model.get('_cohort2Shortname');
 
-    var cond_hier = model.get('_conditionsHierarchy');
+    var cond_hier = model.get('_interestingConditions');
     console.log('cond_hier', cond_hier);
 
     race_stats1 = renameKeys(race_stats1, ['race', 'race_count'], ['category', 'value']);
@@ -979,9 +1030,397 @@ function render({ model, el }) {
 
     // </editor-fold>
 
+    // <editor-fold desc="---------- HIERARCHICAL TABLE FUNCTIONS ----------">
+
+    /**
+     * Renders a collapsible hierarchical table as SVG using D3
+     * @param {Object|Array} data - Hierarchical data (single object or array of root nodes)
+     * @param {Array} columns - Column definitions
+     * @param {string} container - Container node
+     * @param {Object} options - Optional configuration
+     */
+    function HierarchicalTable(data, columns, container, options = {}) {
+        // Default options - matched to ConceptsTable
+        const config = {
+            rowHeight: 30,              // Match ConceptsTable row_height
+            headerHeight: 30,           // Match ConceptsTable header height
+            indentWidth: 20,            // Same as ConceptsTable
+            iconWidth: 30,              // Similar to ConceptsTable text_offset
+            fontSize: 12,               // Match ConceptsTable font_size
+            headerFontSize: 12,         // Match ConceptsTable header font
+            childrenField: 'children',
+            textOffsetX: 10,            // Match ConceptsTable text_offset_x
+
+            // Colors matched to ConceptsTable
+            backgroundColor: '#f0f0f0',      // Match cell background
+            alternateRowColor: '#f0f0f0',    // ConceptsTable doesn't alternate in body
+            headerColor: '#d0d0d0',          // Match ConceptsTable header
+            headerTextColor: '#000000',      // ConceptsTable uses black text
+            textColor: '#333333',
+            borderColor: '#ccc',             // Match ConceptsTable stroke
+            hoverColor: '#e8f5e9',           // Keep hover effect
+            expandIconColor: '#4CAF50',
+            selectedBorderColor: '#4CAF50',  // For selected rows
+            ...options
+        };
+
+        // Handle container (DOM element or D3 selection)
+        let d3Container;
+        if (container && container.append) {
+            d3Container = container;
+        } else if (typeof container === 'string') {
+            d3Container = d3.select('#' + container);
+        } else {
+            d3Container = d3.select(container);
+        }
+
+        if (d3Container.empty()) {
+            console.error('Container not found or empty');
+            return;
+        }
+
+        // Ensure data is array
+        const rootNodes = Array.isArray(data) ? data : [data];
+
+        if (rootNodes.length === 0) {
+            d3Container.html('<p style="padding: 20px; color: #999;">No data to display</p>');
+            return;
+        }
+
+        // Flatten tree structure with metadata
+        const rows = [];
+        function flattenTree(node, level = 0, parentIndex = null) {
+            const rowIndex = rows.length;
+            const children = node[config.childrenField];
+            const hasChildren = children && Array.isArray(children) && children.length > 0;
+
+            rows.push({
+                index: rowIndex,
+                parentIndex: parentIndex,
+                level: level,
+                data: node,
+                hasChildren: hasChildren,
+                expanded: false,
+                visible: level === 0
+            });
+
+            if (hasChildren) {
+                children.forEach(child => {
+                    flattenTree(child, level + 1, rowIndex);
+                });
+            }
+        }
+
+        rootNodes.forEach(node => flattenTree(node));
+
+        // Helper: Get field value (supports nested fields)
+        function getFieldValue(obj, field) {
+            const parts = field.split('.');
+            let value = obj;
+            for (const part of parts) {
+                if (value && typeof value === 'object') {
+                    value = value[part];
+                } else {
+                    return undefined;
+                }
+            }
+            return value;
+        }
+
+        // Helper: Format value
+        function formatValue(value, column) {
+            if (value === undefined || value === null) return '';
+
+            if (column.formatter) {
+                return column.formatter(value);
+            }
+
+            if (column.type === 'percentage') {
+                return `${(value * 100).toFixed(column.decimals || 1)}%`;
+            }
+
+            if (column.type === 'number') {
+                return typeof value === 'number'
+                    ? value.toLocaleString(undefined, {
+                        minimumFractionDigits: column.decimals || 0,
+                        maximumFractionDigits: column.decimals || 0
+                    })
+                    : value;
+            }
+
+            return String(value);
+        }
+
+        // Calculate column widths
+        const totalWidth = columns.reduce((sum, col) => sum + (col.width || 150), config.iconWidth);
+        const visibleRows = rows.filter(r => r.visible);
+        const totalHeight = config.headerHeight + (visibleRows.length * config.rowHeight);
+
+        // Create SVG
+        d3Container.html('');
+        const svg = d3Container
+            .append('svg')
+            .attr('width', totalWidth)
+            .attr('height', totalHeight)
+            .style('font-family', 'Arial, sans-serif')
+            .style('font-size', config.fontSize + 'px');
+
+        // Draw header
+        const header = svg.append('g')
+            .attr('class', 'header');
+
+        // Icon column header background
+        header.append('rect')
+            .attr('width', config.iconWidth)
+            .attr('height', config.headerHeight)
+            .attr('fill', config.headerColor)
+            .attr('stroke', '#fff')
+            .attr('stroke-width', 1);
+
+        // Data column headers
+        let xOffset = config.iconWidth;
+        columns.forEach(col => {
+            const colWidth = col.width || 150;
+
+            // Header background
+            header.append('rect')
+                .attr('x', xOffset)
+                .attr('width', colWidth)
+                .attr('height', config.headerHeight)
+                .attr('fill', config.headerColor)
+                .attr('stroke', '#fff')
+                .attr('stroke-width', 1);
+
+            // Header text
+            header.append('text')
+                .attr('x', xOffset + config.textOffsetX)
+                .attr('y', config.headerHeight / 2)
+                .attr('dy', '0.35em')
+                .attr('fill', config.headerTextColor)
+                .attr('font-size', config.headerFontSize)
+                .text(col.label || col.field);
+
+            xOffset += colWidth;
+        });
+
+        // Track selected rows
+        let selectedRows = new Set();
+
+        // Helper: Check if a row should be visible based on all ancestor states
+        function shouldRowBeVisible(row) {
+            if (row.level === 0) return true;
+
+            let currentRow = row;
+            while (currentRow.parentIndex !== null) {
+                const parent = rows[currentRow.parentIndex];
+                if (!parent.expanded) {
+                    return false;
+                }
+                currentRow = parent;
+            }
+            return true;
+        }
+
+        // Draw rows
+        function drawRows() {
+            // Update visibility based on ancestor states
+            rows.forEach(row => {
+                row.visible = shouldRowBeVisible(row);
+            });
+
+            const visibleRows = rows.filter(r => r.visible);
+
+            // Update SVG height
+            const newHeight = config.headerHeight + (visibleRows.length * config.rowHeight);
+            svg.attr('height', newHeight);
+
+            // Remove old rows
+            svg.selectAll('.data-row').remove();
+
+            // Draw visible rows
+            const rowGroups = svg.selectAll('.data-row')
+                .data(visibleRows)
+                .enter()
+                .append('g')
+                .attr('class', 'data-row')
+                .attr('transform', (d, i) => `translate(0, ${config.headerHeight + i * config.rowHeight})`)
+                .style('cursor', 'pointer');
+
+            // Row backgrounds
+            rowGroups.append('rect')
+                .attr('width', totalWidth)
+                .attr('height', config.rowHeight)
+                .attr('fill', config.backgroundColor)
+                .attr('stroke', config.borderColor)
+                .attr('stroke-width', 0.5)
+                .on('mouseenter', function() {
+                    d3.select(this).attr('fill', config.hoverColor);
+                })
+                .on('mouseleave', function(event, d) {
+                    const rowId = d.data.id || d.data.concept_code || JSON.stringify(d.data);
+                    const isSelected = selectedRows.has(rowId);
+                    d3.select(this).attr('fill', isSelected ? config.hoverColor : config.backgroundColor);
+                })
+                .on('click', function(event, d) {
+                    handleRowClick(d, d3.select(this.parentNode));
+                });
+
+            // Expand/collapse icons in first column
+            rowGroups.each(function(d) {
+                const g = d3.select(this);
+                const iconX = d.level * config.indentWidth + 10;
+
+                if (d.hasChildren) {
+                    // Clickable expand/collapse icon
+                    const iconGroup = g.append('g')
+                        .style('cursor', 'pointer')
+                        .on('click', function(event) {
+                            toggleRow(d);
+                            event.stopPropagation();
+                        });
+
+                    iconGroup.append('text')
+                        .attr('x', iconX)
+                        .attr('y', config.rowHeight / 2)
+                        .attr('dy', '0.35em')
+                        .attr('fill', config.expandIconColor)
+                        .attr('font-size', config.fontSize)
+                        .attr('font-weight', 'bold')
+                        .text(d.expanded ? '▼' : '▶');
+                } else {
+                    // Leaf node bullet
+                    g.append('circle')
+                        .attr('cx', iconX + 5)
+                        .attr('cy', config.rowHeight / 2)
+                        .attr('r', 3)
+                        .attr('fill', config.expandIconColor);
+                }
+            });
+
+            // Data cells
+            rowGroups.each(function(d) {
+                const g = d3.select(this);
+                let xOffset = config.iconWidth;
+
+                columns.forEach((col, colIndex) => {
+                    const colWidth = col.width || 150;
+                    const value = getFieldValue(d.data, col.field);
+                    const formattedValue = formatValue(value, col);
+                    const align = col.align || 'left';
+
+                    // Cell background (for individual cell styling if needed)
+                    g.append('rect')
+                        .attr('x', xOffset)
+                        .attr('width', colWidth)
+                        .attr('height', config.rowHeight)
+                        .attr('fill', 'transparent')
+                        .attr('stroke', config.borderColor)
+                        .attr('stroke-width', 0.5);
+
+                    let textX = xOffset + config.textOffsetX;
+                    let textAnchor = 'start';
+
+                    // For first column, add extra offset to account for indent and icon
+                    if (colIndex === 0) {
+                        const extraIndent = d.level * config.indentWidth + 20;
+                        textX = xOffset + extraIndent;
+                    }
+
+                    if (align === 'right') {
+                        textX = xOffset + colWidth - config.textOffsetX;
+                        textAnchor = 'end';
+                    } else if (align === 'center') {
+                        textX = xOffset + colWidth / 2;
+                        textAnchor = 'middle';
+                    }
+
+                    g.append('text')
+                        .attr('x', textX)
+                        .attr('y', config.rowHeight / 2)
+                        .attr('dy', '0.35em')
+                        .attr('text-anchor', textAnchor)
+                        .attr('fill', config.textColor)
+                        .attr('font-size', config.fontSize)
+                        .text(formattedValue);
+
+                    xOffset += colWidth;
+                });
+            });
+        }
+
+        // Handle row click (selection)
+        function handleRowClick(row, rowGroup) {
+            const rowId = row.data.id || row.data.concept_code || JSON.stringify(row.data);
+
+            if (selectedRows.has(rowId)) {
+                // Deselect
+                selectedRows.delete(rowId);
+                rowGroup.select('rect').attr('fill', config.backgroundColor);
+                rowGroup.select('.row-border').remove();
+            } else {
+                // Clear previous selections
+                selectedRows.clear();
+                svg.selectAll('.data-row rect').attr('fill', config.backgroundColor);
+                svg.selectAll('.row-border').remove();
+
+                // Select this row
+                selectedRows.add(rowId);
+                rowGroup.select('rect').attr('fill', config.hoverColor);
+
+                // Add selection border (similar to ConceptsTable)
+                rowGroup.append('rect')
+                    .attr('class', 'row-border')
+                    .attr('x', 0)
+                    .attr('y', 0)
+                    .attr('width', totalWidth)
+                    .attr('height', config.rowHeight)
+                    .attr('fill', 'none')
+                    .attr('stroke', config.selectedBorderColor)
+                    .attr('stroke-width', 2)
+                    .style('pointer-events', 'none');
+            }
+
+            // Optional: Call callback if provided
+            if (config.onRowSelect) {
+                config.onRowSelect(row.data, selectedRows.has(rowId));
+            }
+        }
+
+        // Toggle row expansion
+        function toggleRow(row) {
+            row.expanded = !row.expanded;
+
+            // If collapsing, collapse all descendants
+            if (!row.expanded) {
+                collapseAllDescendants(row);
+            }
+
+            drawRows();
+        }
+
+        // Recursively collapse all descendants
+        function collapseAllDescendants(row) {
+            rows.forEach(r => {
+                if (r.parentIndex === row.index) {
+                    r.expanded = false;
+                    collapseAllDescendants(r);
+                }
+            });
+        }
+
+        // Initial draw
+        drawRows();
+
+        // Return the SVG node for D3 integration
+        return svg.node();
+    }
+
+    // </editor-fold>
+
     // <editor-fold desc="---------- CONCEPTS TABLE FUNCTIONS ----------">
 
     function ConceptsTable(dispatch, data, shortnames = [], options = {}){
+
         const {
             dimensions = { height: 432, row_height: 30 },
             pageSize = 10
@@ -1509,7 +1948,7 @@ function render({ model, el }) {
                         d3.select(this).classed("selected", false);
                         // Remove the border
                         d3.select(this).select(".row-border").remove();
-                        onRowSelect(d, false);
+                        onConceptTableRowSelect(d, false);
                     } else {
                         // Clear all previous selections first
                         selected_rows.clear();
@@ -1528,7 +1967,7 @@ function render({ model, el }) {
                             .attr("width", total_table_width)
                             .attr("height", row_height);
 
-                        onRowSelect(d, true);
+                        onConceptTableRowSelect(d, true);
                     }
                 });
 
@@ -1746,13 +2185,63 @@ function render({ model, el }) {
         }
 
         // callback function for handling row selection
-        function onRowSelect(rowData, isSelected) {
+        async function onConceptTableRowSelect(rowData, isSelected) {
+            // rowData includes children data, so we don't need to request it
             console.log(`Row ${isSelected ? 'selected' : 'deselected'}:`, rowData);
-            // TODO: add selection logic here
-            // get parents and children
-            // show in new table
-            // we should call the click event to show the right panel only after the new table is ready to show
-            conceptsDragbarDispatcher.call("click", this, e.target.value);
+
+            if (!isSelected) {
+                div_concept_detail_container.innerHtml = 'No data to show.'
+                return;
+            }
+
+            try {
+                // request parents data from Python
+                const parentData = await requestManager.request("get_parent_nodes", {
+                    node_id: rowData.id,
+                    parent_ids: rowData.parent_ids
+                });
+                // console.log("Received parent data:", parentData);
+
+                // update the new table with the data
+                updateRelatedTable(parentData, rowData);
+                // Now that the table is ready, trigger the panel to show
+                conceptsDragbarDispatcher.call("click", this, isSelected);
+
+            } catch (error) {
+                console.error("Error fetching related data:", error);
+                // TODO: handle error - maybe show a message to the user
+            }
+        }
+
+        function updateRelatedTable(parentData, rowData) {
+            // Your logic to populate the new table with parents and children
+            // For example:
+            // const { parents, children } = relatedData;
+            console.log("Parent Data:", parentData);
+            console.log("Row Data:", rowData);
+
+            // Column definitions
+            const columns = [
+                { field: 'concept_name', label: 'Concept Name', width: 300 },
+                { field: 'concept_code', label: 'Concept Code', width: 120 }
+                // ,
+                // { field: 'cohort1_prevalence', label: 'Cohort1 Prevalence', width: 100, type: 'percentage', align: 'right' },
+                // { field: 'cohort2_prevalence', label: 'Cohort2 Prevalence', width: 120, type: 'percentage', decimals: 1, align: 'right' }
+            ];
+
+            // TODO: use columns here
+
+            // Update table with parents
+            let parents_row = div_concept_detail_container.append('div').attr('class', 'row-container');
+            // let parents_col = parents_row.append('div').attr('class', 'col-container');
+            // div_concept_detail_container.append('h1').text('Parent Nodes');
+            HierarchicalTable(parentData['parents'], columns, parents_row);
+
+            // Update table with children
+            // let children_row = div_concept_detail_container.append('div').attr('class', 'row-container');
+            // div_concept_detail_container.append('h1').text('Child Nodes');
+            // let children_col = children_row.append('div').attr('class', 'col-container');
+            // HierarchicalTable(rowData['children'], columns, children_row);
         }
 
         function updateTableBody() {
@@ -1930,6 +2419,10 @@ function render({ model, el }) {
 
     // the container row for the concepts table itself
     const div_concepts_table = div_concepts_table_container.append('div').attr('class', 'row-container');
+
+    // TODO: define these rows here
+    // const parents_row = div_concept_detail_container.append('div').attr('class', 'row-container').style('flex', '0 0 0px');
+    // const children_row = div_concept_detail_container.append('div').attr('class', 'row-container').style('flex', '0 0 0px');
 
     // Add resizing functionality to the structure you created
     const resizablePanel = MakeDragBar({
