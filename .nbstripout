@@ -1,0 +1,11 @@
+cat > .nbstripout << 'EOF'
+{
+  "extra_keys": [
+    "metadata.kernelspec",
+    "metadata.language_info",
+    "cell.metadata.execution",
+    "cell.metadata.scrolled",
+    "cell.metadata.collapsed"
+  ]
+}
+EOF

@@ -1,52 +1,74 @@
 /* PAGE LAYOUT */
 
+* {
+    box-sizing: border-box;
+}
+
 .vis-container {
-    /*display: flex;*/
-    /*flex-direction: column;*/
     align-items: center;
+    border: 1px solid black;
     width: 100%;
-    /*height: 432px; !* match concepts-row height *!*/
-    overflow: visible; /* hide outer vertical scrollbar */
+    font-size: 11px;
+    font-family: sans-serif;
+    padding: 5px;
+    overflow: visible;
 }
 
 .row-container {
     display: flex;
     justify-content: space-around;
     width: 100%;
+    padding: 5px 0 5px 0;
     height: auto;
     overflow: hidden;
-    /*margin-bottom: 5px;*/
 }
 
 .col-container {
     flex: 1;
-    margin: 5px;
-    border: 1px solid black;
+    border: 1px solid lightgray;
     width: 100%;
+}
+
+h1.tight-header,h2.tight-header {
+    margin: 0;
+    line-height: 1;
+}
+
+/* TOOLTIP */
+
+.tooltip {
+    position: absolute;
+    visibility: hidden;
+    background: whitesmoke;
+    color: black;
+    padding: 8px;
+    border-radius: 8px;
+    border: 1px solid darkgray;
+    /*background-image: linear-gradient(to right, lightgray, white);*/
+    pointer-events: none;
+    z-index: 1000;
+}
+
+/* COHORT SUMMARY */
+
+.cohort-summary{
+    gap: 32px; /* space between columns */
+    padding: 15px;
+    background-image: linear-gradient(to right, lightgray, darkgray);
+    overflow: auto;
 }
 
 /* BAR CHART */
 
 /* overall barchart size */
 .barchart{
-    font-family: sans-serif;
     font-size: 12px;
     width: 100%;  /* allows resize to fit the page*/
     height: auto;
 }
 
-/* BAR CHART STYLES */
-
-/* bars */
-.bar1 {
-    fill: steelblue;
-}
-.bar2 {
-    fill: orange;
-}
 /* axis labels */
 .axis-label {
-    font-family: sans-serif;
     font-size: 14px;
 }
 /* lines and tick marks */
@@ -58,7 +80,6 @@
 }
 /* axis text */
 .axis text {
-    font-family: sans-serif;
     font-size: 14px;
 }
 
@@ -81,6 +102,24 @@
     max-height: 370px; /* header height removed */
 }
 
-.full-width {
-    width: 100%;
+/* concepts table row hover and select */
+
+.selected .cell-bg {
+    fill: #f8f9fa !important;
+    stroke: #ccc !important;
+}
+
+.selected {
+    opacity: 1;
+}
+
+.row-border {
+    fill: none;
+    stroke: #007bff;
+    stroke-width: 2px;
+    pointer-events: none;
+}
+
+g[cursor="pointer"]:hover .cell-bg {
+    fill: #f5f5f5;
 }
