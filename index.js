@@ -760,8 +760,12 @@ function render({ model, el }) {
             let data = cond_hier.map(item => {
                 const [prev1 = 0, prev2 = 0] = Object.values(item.metrics).map(m => m.prevalence);
                 const [count1 = 0, count2 = 0] = Object.values(item.metrics).map(m => m.count);
+
+                // Destructure to separate children from the rest
+                const { children, ...itemWithoutChildren } = item;
+
                 return {
-                    ...item,  // Keep ALL original fields
+                    ...itemWithoutChildren,  // Keep all fields EXCEPT children
                     difference_in_prevalence: prev1 - prev2,
                     cohort1_prevalence: prev1,
                     cohort2_prevalence: prev2,
@@ -777,8 +781,12 @@ function render({ model, el }) {
             let data = cond_hier.map(item => {
                 const [prev = 0] = Object.values(item.metrics).map(m => m.prevalence);
                 const [count = 0] = Object.values(item.metrics).map(m => m.count);
-                return{
-                    ...item,  // Keep ALL original fields
+
+                // Destructure to separate children from the rest
+                const { children, ...itemWithoutChildren } = item;
+
+                return {
+                    ...itemWithoutChildren,  // Keep all fields EXCEPT children
                     prevalence: prev,
                     count_in_cohort: count
                 };
