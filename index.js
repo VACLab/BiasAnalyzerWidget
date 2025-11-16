@@ -126,6 +126,10 @@ function render({ model, el }) {
         return aDate.toISOString().split('T')[0];
     }
 
+    function getType(obj) {
+        return Object.prototype.toString.call(obj).slice(8, -1);
+    }
+
     function isNullOrEmpty(value) {
         if (value === null || value === undefined)
             return true;
@@ -143,6 +147,13 @@ function render({ model, el }) {
             default:
                 return false;
         }
+    }
+
+    function logAndThrowError(msg) {
+        const error =
+        console.error('Error Message:', error.message);
+        console.error('Stack Trace:');
+        console.error(error.stack.split('\n').join('\n'));
     }
 
     function removeDuplicates(data, key) {
@@ -210,7 +221,7 @@ function render({ model, el }) {
     var age_dist2 = model.get('_ageDist2');
     var cohort2_shortname = model.get('_cohort2Shortname');
 
-    var cond_hier = model.get('_conditionsHierarchy');
+    var cond_hier = model.get('_interestingConditions');
     console.log('cond_hier', cond_hier);
 
     race_stats1 = renameKeys(race_stats1, ['race', 'race_count'], ['category', 'value']);
@@ -884,6 +895,7 @@ function render({ model, el }) {
         // </editor-fold>
 
         // ==== Validation for required params ====
+        console.log('data type = ', getType(data))
         if (!dataEntityExists(data)) {
             throw new Error("ConceptsTable requires at least one cohort.");
         }
@@ -1550,7 +1562,7 @@ function render({ model, el }) {
         const page_input = nav_container.append("input")
             .attr("type", "number")
             .attr("min", 1)
-            .style("width", "40px")
+            .style("width", "50px")
             .style("padding", "2px")
             .style("border", "1px solid #ccc")
             .style("text-align", "center")
