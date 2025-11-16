@@ -179,6 +179,10 @@ function render({ model, el }) {
         return aDate.toISOString().split('T')[0];
     }
 
+    function getType(obj) {
+        return Object.prototype.toString.call(obj).slice(8, -1);
+    }
+
     function isNullOrEmpty(value) {
         if (value === null || value === undefined)
             return true;
@@ -196,6 +200,13 @@ function render({ model, el }) {
             default:
                 return false;
         }
+    }
+
+    function logAndThrowError(msg) {
+        const error =
+        console.error('Error Message:', error.message);
+        console.error('Stack Trace:');
+        console.error(error.stack.split('\n').join('\n'));
     }
 
     function removeDuplicates(data, key) {
@@ -1451,8 +1462,12 @@ function render({ model, el }) {
             let data = cond_hier.map(item => {
                 const [prev1 = 0, prev2 = 0] = Object.values(item.metrics).map(m => m.prevalence);
                 const [count1 = 0, count2 = 0] = Object.values(item.metrics).map(m => m.count);
+
+                // Destructure to separate children from the rest
+                const { children, ...itemWithoutChildren } = item;
+
                 return {
-                    ...item,  // Keep ALL original fields
+                    ...itemWithoutChildren,  // Keep all fields EXCEPT children
                     difference_in_prevalence: prev1 - prev2,
                     cohort1_prevalence: prev1,
                     cohort2_prevalence: prev2,
@@ -1468,8 +1483,12 @@ function render({ model, el }) {
             let data = cond_hier.map(item => {
                 const [prev = 0] = Object.values(item.metrics).map(m => m.prevalence);
                 const [count = 0] = Object.values(item.metrics).map(m => m.count);
-                return{
-                    ...item,  // Keep ALL original fields
+
+                // Destructure to separate children from the rest
+                const { children, ...itemWithoutChildren } = item;
+
+                return {
+                    ...itemWithoutChildren,  // Keep all fields EXCEPT children
                     prevalence: prev,
                     count_in_cohort: count
                 };
@@ -1586,6 +1605,7 @@ function render({ model, el }) {
         // </editor-fold>
 
         // ==== Validation for required params ====
+        console.log('data type = ', getType(data))
         if (!dataEntityExists(data)) {
             throw new Error("ConceptsTable requires at least one cohort.");
         }
@@ -2317,7 +2337,7 @@ function render({ model, el }) {
         const page_input = nav_container.append("input")
             .attr("type", "number")
             .attr("min", 1)
-            .style("width", "40px")
+            .style("width", "50px")
             .style("padding", "2px")
             .style("border", "1px solid #ccc")
             .style("text-align", "center")
