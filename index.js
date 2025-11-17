@@ -373,14 +373,25 @@ function render({ model, el }) {
 
         // Helper function to update panel widths
         function updatePanelWidths(newWidthLeft, newWidthRight) {
-            leftNode.style.flex = `0 0 ${newWidthLeft}px`;
-            rightNode.style.flex = `0 0 ${newWidthRight}px`;
+            leftNode.style.flex = `0 0 ${Math.max(0, newWidthLeft)}px`;
+            rightNode.style.flex = `0 0 ${Math.max(0, newWidthRight)}px`;
         }
 
         // Helper function to snap panels
         function snapPanels(dx) {
-            const totalWidth = parentNode.getBoundingClientRect().width;
-            const availableWidth = totalWidth - dragBarWidth;
+            const parentRect = parentNode.getBoundingClientRect();
+            const parentStyle = window.getComputedStyle(parentNode);
+            const paddingLeft = parseFloat(parentStyle.paddingLeft) || 0;
+            const paddingRight = parseFloat(parentStyle.paddingRight) || 0;
+
+            // Account for borders on left and right containers
+            const leftBorderWidth = parseFloat(window.getComputedStyle(leftNode).borderLeftWidth) +
+                parseFloat(window.getComputedStyle(leftNode).borderRightWidth);
+            const rightBorderWidth = parseFloat(window.getComputedStyle(rightNode).borderLeftWidth) +
+                parseFloat(window.getComputedStyle(rightNode).borderRightWidth);
+
+            const totalWidth = parentRect.width - paddingLeft - paddingRight;
+            const availableWidth = totalWidth - dragBarWidth - leftBorderWidth - rightBorderWidth;
 
             const newWidthLeft = startWidthLeft + dx;
             const newWidthRight = startWidthRight - dx;
@@ -388,10 +399,8 @@ function render({ model, el }) {
             if (newWidthLeft > 0 && newWidthRight > 0) {
                 updatePanelWidths(newWidthLeft, newWidthRight);
             } else if (newWidthLeft <= 0) {
-                // Snap to fully right
                 updatePanelWidths(0, availableWidth);
             } else if (newWidthRight <= 0) {
-                // Snap to fully left
                 updatePanelWidths(availableWidth, 0);
             }
         }
@@ -484,8 +493,19 @@ function render({ model, el }) {
         }
 
         function onDoubleClick(event) {
-            const totalWidth = parentNode.getBoundingClientRect().width;
-            const availableWidth = totalWidth - dragBarWidth;
+            const parentRect = parentNode.getBoundingClientRect();
+            const parentStyle = window.getComputedStyle(parentNode);
+            const paddingLeft = parseFloat(parentStyle.paddingLeft) || 0;
+            const paddingRight = parseFloat(parentStyle.paddingRight) || 0;
+
+            // Account for borders on left and right containers
+            const leftBorderWidth = parseFloat(window.getComputedStyle(leftNode).borderLeftWidth) +
+                parseFloat(window.getComputedStyle(leftNode).borderRightWidth);
+            const rightBorderWidth = parseFloat(window.getComputedStyle(rightNode).borderLeftWidth) +
+                parseFloat(window.getComputedStyle(rightNode).borderRightWidth);
+
+            const totalWidth = parentRect.width - paddingLeft - paddingRight;
+            const availableWidth = totalWidth - dragBarWidth - leftBorderWidth - rightBorderWidth;
 
             const currentLeftWidth = leftNode.getBoundingClientRect().width;
             const currentRightWidth = rightNode.getBoundingClientRect().width;
@@ -524,6 +544,24 @@ function render({ model, el }) {
         dragBarElement.addEventListener('pointercancel', onPointerCancel);
         dragBarElement.addEventListener('dblclick', onDoubleClick);
 
+        // Initialize panel state based on initialRightPanelOpen
+        if (!initialRightPanelOpen) {
+            const parentRect = parentNode.getBoundingClientRect();
+            const parentStyle = window.getComputedStyle(parentNode);
+            const paddingLeft = parseFloat(parentStyle.paddingLeft) || 0;
+            const paddingRight = parseFloat(parentStyle.paddingRight) || 0;
+
+            const leftBorderWidth = parseFloat(window.getComputedStyle(leftNode).borderLeftWidth) +
+                parseFloat(window.getComputedStyle(leftNode).borderRightWidth);
+            const rightBorderWidth = parseFloat(window.getComputedStyle(rightNode).borderLeftWidth) +
+                parseFloat(window.getComputedStyle(rightNode).borderRightWidth);
+
+            const totalWidth = parentRect.width - paddingLeft - paddingRight;
+            const availableWidth = totalWidth - dragBarWidth - leftBorderWidth - rightBorderWidth;
+
+            updatePanelWidths(availableWidth, 0);
+        }
+
         // Public API
         return {
             dispatch,
@@ -547,9 +585,21 @@ function render({ model, el }) {
                     rightWidth: rightNode.getBoundingClientRect().width
                 };
             },
+
             setState(state) {
-                const totalWidth = parentNode.getBoundingClientRect().width;
-                const availableWidth = totalWidth - dragBarWidth;
+                const parentRect = parentNode.getBoundingClientRect();
+                const parentStyle = window.getComputedStyle(parentNode);
+                const paddingLeft = parseFloat(parentStyle.paddingLeft) || 0;
+                const paddingRight = parseFloat(parentStyle.paddingRight) || 0;
+
+                // Account for borders on left and right containers
+                const leftBorderWidth = parseFloat(window.getComputedStyle(leftNode).borderLeftWidth) +
+                    parseFloat(window.getComputedStyle(leftNode).borderRightWidth);
+                const rightBorderWidth = parseFloat(window.getComputedStyle(rightNode).borderLeftWidth) +
+                    parseFloat(window.getComputedStyle(rightNode).borderRightWidth);
+
+                const totalWidth = parentRect.width - paddingLeft - paddingRight;
+                const availableWidth = totalWidth - dragBarWidth - leftBorderWidth - rightBorderWidth;
 
                 if (state === 'left-full') {
                     updatePanelWidths(availableWidth, 0);
@@ -590,7 +640,7 @@ function render({ model, el }) {
             .style("padding", "4px");
 
         // observable input
-        const input = Inputs.text({ label: label, placeholder: "Filter", width: "200px" });
+        const input = Inputs.text({ label: label, placeholder: "Filter", width: `${width}px`});
         input.style.marginLeft = '8px';
 
         // The actual input element is inside the wrapper
@@ -599,7 +649,7 @@ function render({ model, el }) {
         innerInput.style.borderRadius = "8px";
         innerInput.style.border = "1px solid #ccc";
         // innerInput.style.padding = "4px 8px"; // optional for nicer spacing
-        innerInput.style.width = "100%";      // fills the wrapper width
+        innerInput.style.width = `${width}px`;    // "100%";      // fills the wrapper width
 
         // Dispatch filter event on input
         input.addEventListener("input", e => dispatch.call("filter", this, e.target.value));
@@ -1162,57 +1212,33 @@ function render({ model, el }) {
             return String(value);
         }
 
-        // Calculate column widths
-        const totalWidth = columns.reduce((sum, col) => sum + (col.width || 150), config.iconWidth);
+        // Calculate initial column positions
+        function calculateColumnPositions() {
+            let xOffset = config.iconWidth;
+            columns.forEach(col => {
+                col.x = xOffset;
+                if (!col.width) col.width = 150; // Set default width if not specified
+                xOffset += col.width;
+            });
+        }
+
+        calculateColumnPositions();
+
+        // Calculate total width
+        function getTotalWidth() {
+            return config.iconWidth + columns.reduce((sum, col) => sum + col.width, 0);
+        }
+
         const visibleRows = rows.filter(r => r.visible);
-        const totalHeight = config.headerHeight + (visibleRows.length * config.rowHeight);
 
         // Create SVG
         d3Container.html('');
         const svg = d3Container
             .append('svg')
-            .attr('width', totalWidth)
-            .attr('height', totalHeight)
+            .attr('width', getTotalWidth())
+            .attr('height', config.headerHeight + (visibleRows.length * config.rowHeight))
             .style('font-family', 'Arial, sans-serif')
             .style('font-size', config.fontSize + 'px');
-
-        // Draw header
-        const header = svg.append('g')
-            .attr('class', 'header');
-
-        // Icon column header background
-        header.append('rect')
-            .attr('width', config.iconWidth)
-            .attr('height', config.headerHeight)
-            .attr('fill', config.headerColor)
-            .attr('stroke', '#fff')
-            .attr('stroke-width', 1);
-
-        // Data column headers
-        let xOffset = config.iconWidth;
-        columns.forEach(col => {
-            const colWidth = col.width || 150;
-
-            // Header background
-            header.append('rect')
-                .attr('x', xOffset)
-                .attr('width', colWidth)
-                .attr('height', config.headerHeight)
-                .attr('fill', config.headerColor)
-                .attr('stroke', '#fff')
-                .attr('stroke-width', 1);
-
-            // Header text
-            header.append('text')
-                .attr('x', xOffset + config.textOffsetX)
-                .attr('y', config.headerHeight / 2)
-                .attr('dy', '0.35em')
-                .attr('fill', config.headerTextColor)
-                .attr('font-size', config.headerFontSize)
-                .text(col.label || col.field);
-
-            xOffset += colWidth;
-        });
 
         // Track selected rows
         let selectedRows = new Set();
@@ -1230,6 +1256,89 @@ function render({ model, el }) {
                 currentRow = parent;
             }
             return true;
+        }
+
+        // Draw header
+        function drawHeader() {
+            svg.selectAll('.header').remove();
+
+            const header = svg.append('g')
+                .attr('class', 'header');
+
+            // Icon column header background
+            header.append('rect')
+                .attr('width', config.iconWidth)
+                .attr('height', config.headerHeight)
+                .attr('fill', config.headerColor)
+                .attr('stroke', '#fff')
+                .attr('stroke-width', 1);
+
+            // Data column headers
+            columns.forEach((col, colIndex) => {
+                const headerGroup = header.append('g')
+                    .attr('class', 'header-group')
+                    .attr('transform', `translate(${col.x}, 0)`);
+
+                // Header background
+                headerGroup.append('rect')
+                    .attr('width', col.width)
+                    .attr('height', config.headerHeight)
+                    .attr('fill', config.headerColor)
+                    .attr('stroke', '#fff')
+                    .attr('stroke-width', 1);
+
+                // Header text
+                headerGroup.append('text')
+                    .attr('x', config.textOffsetX)
+                    .attr('y', config.headerHeight / 2)
+                    .attr('dy', '0.35em')
+                    .attr('fill', config.headerTextColor)
+                    .attr('font-size', config.headerFontSize)
+                    .text(col.label || col.field);
+
+                // Add resize handle
+                headerGroup.append('rect')
+                    .attr('class', 'resize-handle')
+                    .attr('x', col.width - 5)
+                    .attr('y', 0)
+                    .attr('width', 10)
+                    .attr('height', config.headerHeight)
+                    .style('cursor', 'col-resize')
+                    .style('fill', 'transparent')
+                    .call(d3.drag()
+                        .on('start', function(event) {
+                            col.startWidth = col.width;
+                            col.startX = event.x;
+                        })
+                        .on('drag', function(event) {
+                            const dx = event.x - col.startX;
+                            const newWidth = Math.max(30, col.startWidth + dx);
+                            col.width = newWidth;
+
+                            // Recalculate positions for all columns after this one
+                            calculateColumnPositions();
+
+                            // Update header
+                            d3.select(this.parentNode).select('rect:first-of-type')
+                                .attr('width', newWidth);
+                            d3.select(this).attr('x', newWidth - 5);
+
+                            // Update all header positions
+                            header.selectAll('.header-group')
+                                .attr('transform', (d, i) => `translate(${columns[i].x}, 0)`);
+
+                            // Update SVG width
+                            svg.attr('width', getTotalWidth());
+
+                            // Redraw rows with new column widths
+                            drawRows();
+                        })
+                        .on('end', function() {
+                            delete col.startWidth;
+                            delete col.startX;
+                        })
+                    );
+            });
         }
 
         // Draw rows
@@ -1259,7 +1368,7 @@ function render({ model, el }) {
 
             // Row backgrounds
             rowGroups.append('rect')
-                .attr('width', totalWidth)
+                .attr('width', getTotalWidth())
                 .attr('height', config.rowHeight)
                 .attr('fill', config.backgroundColor)
                 .attr('stroke', config.borderColor)
@@ -1311,37 +1420,35 @@ function render({ model, el }) {
             // Data cells
             rowGroups.each(function(d) {
                 const g = d3.select(this);
-                let xOffset = config.iconWidth;
 
                 columns.forEach((col, colIndex) => {
-                    const colWidth = col.width || 150;
                     const value = getFieldValue(d.data, col.field);
                     const formattedValue = formatValue(value, col);
                     const align = col.align || 'left';
 
                     // Cell background (for individual cell styling if needed)
                     g.append('rect')
-                        .attr('x', xOffset)
-                        .attr('width', colWidth)
+                        .attr('x', col.x)
+                        .attr('width', col.width)
                         .attr('height', config.rowHeight)
                         .attr('fill', 'transparent')
                         .attr('stroke', config.borderColor)
                         .attr('stroke-width', 0.5);
 
-                    let textX = xOffset + config.textOffsetX;
+                    let textX = col.x + config.textOffsetX;
                     let textAnchor = 'start';
 
                     // For first column, add extra offset to account for indent and icon
                     if (colIndex === 0) {
                         const extraIndent = d.level * config.indentWidth + 20;
-                        textX = xOffset + extraIndent;
+                        textX = col.x + extraIndent;
                     }
 
                     if (align === 'right') {
-                        textX = xOffset + colWidth - config.textOffsetX;
+                        textX = col.x + col.width - config.textOffsetX;
                         textAnchor = 'end';
                     } else if (align === 'center') {
-                        textX = xOffset + colWidth / 2;
+                        textX = col.x + col.width / 2;
                         textAnchor = 'middle';
                     }
 
@@ -1353,8 +1460,6 @@ function render({ model, el }) {
                         .attr('fill', config.textColor)
                         .attr('font-size', config.fontSize)
                         .text(formattedValue);
-
-                    xOffset += colWidth;
                 });
             });
         }
@@ -1371,7 +1476,7 @@ function render({ model, el }) {
             } else {
                 // Clear previous selections
                 selectedRows.clear();
-                svg.selectAll('.data-row rect').attr('fill', config.backgroundColor);
+                svg.selectAll('.data-row rect:first-of-type').attr('fill', config.backgroundColor);
                 svg.selectAll('.row-border').remove();
 
                 // Select this row
@@ -1383,7 +1488,7 @@ function render({ model, el }) {
                     .attr('class', 'row-border')
                     .attr('x', 0)
                     .attr('y', 0)
-                    .attr('width', totalWidth)
+                    .attr('width', getTotalWidth())
                     .attr('height', config.rowHeight)
                     .attr('fill', 'none')
                     .attr('stroke', config.selectedBorderColor)
@@ -1420,6 +1525,7 @@ function render({ model, el }) {
         }
 
         // Initial draw
+        drawHeader();
         drawRows();
 
         // Return the SVG node for D3 integration
@@ -1681,8 +1787,8 @@ function render({ model, el }) {
             columns_data = [
                 { text: headers_text[2], field: "concept_code",  x: 0,   width: 160 },
                 { text: headers_text[1], field: "concept_name",  x: 160, width: 590 },
-                { text: headers_text[8], field: "count_in_cohort", x: 750, width: 160 },
-                { text: headers_text[7], field: "prevalence", x: 910, width: 160 }
+                { text: headers_text[8], field: "count_in_cohort", x: 750, width: 157 },
+                { text: headers_text[7], field: "prevalence", x: 907, width: 160 }
             ];
         }
         else{
@@ -1691,8 +1797,8 @@ function render({ model, el }) {
                 { text: headers_text[2], field: "concept_code", x: 60, width: 140, type: 'text' },
                 { text: headers_text[1], field: "concept_name", x: 200, width: 350, type: 'text' },
                 { text: headers_text[10], field: "cohort2_prevalence", x: 550, width: 140, type: 'text' },
-                { text: headers_text[8], field: "difference_in_prevalence", x: 690, width: 240, type: 'compare_bars' },
-                { text: headers_text[9], field: "cohort1_prevalence", x: 930, width: 140, type: 'text' }
+                { text: headers_text[8], field: "difference_in_prevalence", x: 690, width: 237, type: 'compare_bars' },
+                { text: headers_text[9], field: "cohort1_prevalence", x: 927, width: 140, type: 'text' }
             ];
         }
 
@@ -2210,7 +2316,7 @@ function render({ model, el }) {
             console.log(`Row ${isSelected ? 'selected' : 'deselected'}:`, rowData);
 
             if (!isSelected) {
-                div_concept_detail_container.innerHtml = 'No data to show.'
+                concept_hiertable_col.innerHtml = 'No data to show.'
                 return;
             }
 
@@ -2252,14 +2358,14 @@ function render({ model, el }) {
             // TODO: use columns here
 
             // Update table with parents
-            let parents_row = div_concept_detail_container.append('div').attr('class', 'row-container');
+            let parents_row = concept_hiertable_col.append('div').attr('class', 'row-container');
             // let parents_col = parents_row.append('div').attr('class', 'col-container');
-            // div_concept_detail_container.append('h1').text('Parent Nodes');
+            // concept_hiertable_col.append('h1').text('Parent Nodes');
             HierarchicalTable(parentData['parents'], columns, parents_row);
 
             // Update table with children
-            // let children_row = div_concept_detail_container.append('div').attr('class', 'row-container');
-            // div_concept_detail_container.append('h1').text('Child Nodes');
+            // let children_row = concept_hiertable_col.append('div').attr('class', 'row-container');
+            // concept_hiertable_col.append('h1').text('Child Nodes');
             // let children_col = children_row.append('div').attr('class', 'col-container');
             // HierarchicalTable(rowData['children'], columns, children_row);
         }
@@ -2415,42 +2521,44 @@ function render({ model, el }) {
     const vis_container = d3.select(el).append("div").attr('class', 'vis-container');
 
     // summary container row
-    const div_cohort_summary = vis_container.append('div').attr('class', 'row-container cohort-summary');
+    const cohort_summary_row = vis_container.append('div').attr('class', 'row-container cohort-summary');
+    const cohort_summary_col = cohort_summary_row.append('div').attr('class', 'col-container col-full no-border');
 
     // demographics row
-    const demographics_row = vis_container.append('div').attr('class', 'row-container');
-    const div_gender = demographics_row.append('div').attr('class', 'col-container');
-    const div_race = demographics_row.append('div').attr('class', 'col-container');
-    const div_ethnicity = demographics_row.append('div').attr('class', 'col-container');
-    const div_age = demographics_row.append('div').attr('class', 'col-container');
+    const demographics_row = vis_container.append('div').attr('class', 'row-container demographics-row');
+    const gender_col = demographics_row.append('div').attr('class', 'col-container');
+    const race_col = demographics_row.append('div').attr('class', 'col-container');
+    const ethnicity_col = demographics_row.append('div').attr('class', 'col-container');
+    const age_col = demographics_row.append('div').attr('class', 'col-container');
 
     // concepts row
-    const concepts_row = vis_container.append('div').attr('class', 'row-container concepts-row');
-    const div_concepts_table_container = concepts_row.append('div').attr('class', 'col-container').style('flex', '1 1 auto');;
-    const drag_bar = concepts_row.append('div').attr('class', 'drag-bar');
-    const div_concept_detail_container = concepts_row.append('div').attr('class', 'col-container').style('flex', '0 0 0px');
+    const concepts_row = vis_container.append('div').attr('class', 'row-container concepts-row no-border');
+    const concepts_col = concepts_row.append('div').attr('class', 'col-container col-full');
 
     // concepts controls row
-    const div_concepts_ctrl = div_concepts_table_container.append('div')
-        .attr('class', 'row-container')
-        .style('display', 'flex')
-        .style('justify-content', 'flex-start')
-        .style('border', 'none');
+    const concepts_ctrl_row = concepts_col.append('div').attr('class', 'row-container concepts-ctrl-row');
+    // const concepts_ctrl_col = concepts_ctrl_row.append('div').attr('class', 'col-container col-full');
+
+    // concepts table & hierarchy row
+    const concepts_tables_row = concepts_col.append('div').attr('class', 'row-container concepts-tables-row');
+    const concepts_table_col = concepts_tables_row.append('div').attr('class', 'col-container col-resizable');
+    const dragbar_col = concepts_tables_row.append('div').attr('class', 'drag-bar');
+    const concept_hier_table_col = concepts_tables_row.append('div').attr('class', 'col-container col-collapsed');
 
     // the container row for the concepts table itself
-    const div_concepts_table = div_concepts_table_container.append('div').attr('class', 'row-container');
+    // const div_concepts_table = concepts_col.append('div').attr('class', 'row-container');
 
     // TODO: define these rows here
-    // const parents_row = div_concept_detail_container.append('div').attr('class', 'row-container').style('flex', '0 0 0px');
-    // const children_row = div_concept_detail_container.append('div').attr('class', 'row-container').style('flex', '0 0 0px');
+    // const parents_row = concept_hier_table_col.append('div').attr('class', 'row-container').style('flex', '0 0 0px');
+    // const children_row = concept_hier_table_col.append('div').attr('class', 'row-container').style('flex', '0 0 0px');
 
     // Add resizing functionality to the structure you created
     const resizablePanel = MakeDragBar({
         dispatch: conceptsDragbarDispatcher,
-        dragBar: drag_bar,
-        leftContainer: div_concepts_table_container,
-        rightContainer: div_concept_detail_container,
-        parentContainer: concepts_row,
+        dragBar: dragbar_col,
+        leftContainer: concepts_table_col,
+        rightContainer: concept_hier_table_col,
+        parentContainer: concepts_tables_row,
         visContainer: vis_container
     });
 
@@ -2461,49 +2569,49 @@ function render({ model, el }) {
     const cohort2_exists = dataEntityExists(cohort2_stats); // assumption: if this exists, the rest of the cohort 2 data also exists
 
     // summary statistics
-    SummaryStatistics(div_cohort_summary, {data: cohort1_stats, meta: cohort1_meta, shortname: cohort1_shortname},
+    SummaryStatistics(cohort_summary_col, {data: cohort1_stats, meta: cohort1_meta, shortname: cohort1_shortname},
         {series2: {data: cohort2_stats, meta: cohort2_meta, shortname: cohort2_shortname}});
 
     // draw the gender barchart
     let series2_data = cohort2_exists ?
         {data: gender_dist2, shortname: cohort2_shortname, total_count: cohort2_stats[0].total_count} : {};
-    div_gender.append(() =>
+    gender_col.append(() =>
         VerticalBarChart({data: gender_dist1, shortname: cohort1_shortname, total_count: cohort1_stats[0].total_count},
             {series2: series2_data, dimensions: {xlabel: 'gender'}})
     );
 
     series2_data = cohort2_exists ?
         {data: race_stats2, shortname: cohort2_shortname, total_count: cohort2_stats[0].total_count} : {};
-    div_race.append(() =>
+    race_col.append(() =>
         VerticalBarChart({data: race_stats1, shortname: cohort1_shortname, total_count: cohort1_stats[0].total_count},
             {series2: series2_data, dimensions: {xlabel: 'race'}})
     );
 
     series2_data = cohort2_exists ?
         {data: ethnicity_stats2, shortname: cohort2_shortname, total_count: cohort2_stats[0].total_count} : {};
-    div_ethnicity.append(() =>
+    ethnicity_col.append(() =>
         VerticalBarChart({data: ethnicity_stats1, shortname: cohort1_shortname, total_count: cohort1_stats[0].total_count},
             {series2: series2_data, dimensions: {xlabel: 'ethnicity'}})
     );
 
     series2_data = cohort2_exists ?
         {data: age_dist2, shortname: cohort2_shortname, total_count: cohort2_stats[0].total_count} : {};
-    div_age.append(() =>
+    age_col.append(() =>
         VerticalBarChart({data: age_dist1, shortname: cohort1_shortname, total_count: cohort1_stats[0].total_count},
             {series2: series2_data, dimensions: {xlabel: 'age'}})
     );
 
     // draw the concepts table search box
-    div_concepts_ctrl.append(() =>
+    concepts_ctrl_row.append(() =>
         SearchBox(conceptsTableDispatcher, {label: 'Filter concept code or name'})
     );
 
     const default_prevalence_dp = 3;
-    div_concepts_ctrl.append(() =>
+    concepts_ctrl_row.append(() =>
         SpinnerBox(conceptsTableDispatcher, {label: 'Prev dp'})
     );
 
-    div_concepts_table.append(() =>
+    concepts_table_col.append(() =>
         ConceptsTable(conceptsTableDispatcher, cond_hier, [cohort1_shortname, cohort2_shortname])
     );
 
