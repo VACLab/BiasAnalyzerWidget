@@ -17,20 +17,221 @@ function render({ model, el }) {
 
     // Reusable RequestManager
     class RequestManager {
-        constructor(model) {
+        constructor(model, container) {
             this.model = model;
             this.pendingRequests = new Map();
             this.requestId = 0;
+            this.container = container;
+
+            // Add spinner animation styles
+            this.addStyles();
 
             model.on("change:response", () => {
                 this.handleResponse(model.get("response"));
             });
         }
 
-        async request(type, params = {}) {
+        addStyles() {
+            // Check if styles already exist
+            if (document.getElementById('request-manager-styles')) return;
+
+            const style = document.createElement('style');
+            style.id = 'request-manager-styles';
+            style.textContent = `
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+        `;
+            document.head.appendChild(style);
+        }
+
+        createLocalProgress(container, message, id) {
+            const progressDiv = d3.select(container)
+                .append('div')
+                .attr('class', `local-progress local-progress-${id}`)
+                .style('display', 'flex')
+                .style('align-items', 'center')
+                .style('justify-content', 'space-between')
+                .style('gap', '8px')
+                .style('padding', '8px 12px')
+                .style('background', '#f5f5f5')
+                .style('border', '1px solid #e0e0e0')
+                .style('border-radius', '4px')
+                .style('margin', '4px 0')
+                .style('font-size', '12px');
+
+            // Left side: spinner and message
+            const leftSide = progressDiv
+                .append('div')
+                .style('display', 'flex')
+                .style('align-items', 'center')
+                .style('gap', '8px')
+                .style('flex', '1');
+
+            const spinner = leftSide
+                .append('div')
+                .attr('class', 'spinner')
+                .style('width', '16px')
+                .style('height', '16px')
+                .style('border', '2px solid #e0e0e0')
+                .style('border-top-color', '#2196F3')
+                .style('border-radius', '50%')
+                .style('animation', 'spin 0.8s linear infinite')
+                .style('flex-shrink', '0');
+
+            const text = leftSide
+                .append('span')
+                .style('color', '#666')
+                .text(message);
+
+            // Right side: cancel button
+            const cancelBtn = progressDiv
+                .append('button')
+                .attr('class', 'cancel-btn')
+                .style('background', 'transparent')
+                .style('border', '1px solid #ccc')
+                .style('border-radius', '3px')
+                .style('padding', '2px 8px')
+                .style('cursor', 'pointer')
+                .style('font-size', '11px')
+                .style('color', '#666')
+                .text('Cancel')
+                .on('mouseover', function() {
+                    d3.select(this).style('background', '#f0f0f0');
+                })
+                .on('mouseout', function() {
+                    d3.select(this).style('background', 'transparent');
+                })
+                .on('click', () => {
+                    this.cancelRequest(id);
+                });
+
+            return {
+                element: progressDiv.node(),
+                spinner: spinner.node(),
+                text: text.node(),
+                cancelBtn: cancelBtn.node()
+            };
+        }
+
+        showSuccess(progressElement) {
+            const div = d3.select(progressElement.element);
+            const spinner = d3.select(progressElement.spinner);
+            const text = d3.select(progressElement.text);
+            const cancelBtn = d3.select(progressElement.cancelBtn);
+
+            // Update spinner to checkmark
+            spinner
+                .style('animation', 'none')
+                .style('border', 'none')
+                .style('display', 'flex')
+                .style('align-items', 'center')
+                .style('justify-content', 'center')
+                .style('color', '#4CAF50')
+                .style('font-weight', 'bold')
+                .style('font-size', '14px')
+                .text('✓');
+
+            text.text('Complete').style('color', '#4CAF50');
+            cancelBtn.style('display', 'none');
+            div.style('border-color', '#4CAF50');
+
+            // Remove after brief delay
+            setTimeout(() => {
+                div.remove();
+            }, 1000);
+        }
+
+        showError(progressElement, errorMessage) {
+            const div = d3.select(progressElement.element);
+            const spinner = d3.select(progressElement.spinner);
+            const text = d3.select(progressElement.text);
+            const cancelBtn = d3.select(progressElement.cancelBtn);
+
+            // Update spinner to X
+            spinner
+                .style('animation', 'none')
+                .style('border', 'none')
+                .style('display', 'flex')
+                .style('align-items', 'center')
+                .style('justify-content', 'center')
+                .style('color', '#f44336')
+                .style('font-weight', 'bold')
+                .style('font-size', '14px')
+                .text('✕');
+
+            text.text(`Error: ${errorMessage}`).style('color', '#f44336');
+            cancelBtn.style('display', 'none');
+            div.style('border-color', '#f44336');
+
+            // Remove after longer delay
+            setTimeout(() => {
+                div.remove();
+            }, 3000);
+        }
+
+        cancelRequest(requestId) {
+            const pending = this.pendingRequests.get(requestId);
+            if (pending) {
+                // Remove progress indicator
+                if (pending.progressElement) {
+                    d3.select(pending.progressElement.element).remove();
+                }
+
+                // Reject the promise with cancellation error
+                pending.reject(new Error('Request cancelled'));
+
+                // Remove from pending
+                this.pendingRequests.delete(requestId);
+
+                console.log(`Request ${requestId} cancelled`);
+
+                // Optionally notify Python to stop processing (if supported)
+                // this.model.set("cancel_request", requestId);
+                // this.model.save_changes();
+
+                return true;
+            }
+            return false;
+        }
+
+        cancelAll() {
+            const cancelledIds = [];
+            this.pendingRequests.forEach((pending, id) => {
+                if (pending.progressElement) {
+                    d3.select(pending.progressElement.element).remove();
+                }
+                pending.reject(new Error('All requests cancelled'));
+                cancelledIds.push(id);
+            });
+            this.pendingRequests.clear();
+            console.log(`Cancelled ${cancelledIds.length} requests`);
+            return cancelledIds;
+        }
+
+        async request(type, params = {}, options = {}) {
+            const {
+                statusMessage = 'Processing request...',
+                showProgress = true,
+                progressContainer = null
+            } = options;
+
             return new Promise((resolve, reject) => {
                 const id = ++this.requestId;
-                this.pendingRequests.set(id, { resolve, reject });
+                const startTime = Date.now();
+
+                this.pendingRequests.set(id, { resolve, reject, type, startTime });
+
+                if (showProgress) {
+                    const targetContainer = progressContainer || this.container;
+                    const localProgress = this.createLocalProgress(
+                        targetContainer,
+                        statusMessage,
+                        id
+                    );
+                    this.pendingRequests.get(id).progressElement = localProgress;
+                }
 
                 const requestData = { id, type, params };
                 this.model.set("request", JSON.stringify(requestData));
@@ -39,7 +240,6 @@ function render({ model, el }) {
         }
 
         handleResponse(responseJson) {
-            // TODO: debug in browser
             if (!responseJson) return;
 
             const response = JSON.parse(responseJson);
@@ -47,17 +247,29 @@ function render({ model, el }) {
 
             const pending = this.pendingRequests.get(id);
             if (pending) {
+                const duration = Date.now() - pending.startTime;
+
                 if (success) {
+                    // Show success state
+                    if (pending.progressElement) {
+                        this.showSuccess(pending.progressElement);
+                    }
                     pending.resolve(data);
                 } else {
+                    // Show error state
+                    if (pending.progressElement) {
+                        this.showError(pending.progressElement, error || 'Request failed');
+                    }
                     pending.reject(new Error(error));
                 }
                 this.pendingRequests.delete(id);
+
+                console.log(`Request ${id} completed in ${duration}ms`);
             }
         }
     }
 
-    const requestManager = new RequestManager(model);
+    const requestManager = new RequestManager(model, el);
 
     // </editor-fold>
 
@@ -70,7 +282,7 @@ function render({ model, el }) {
     // handles all tooltips
     const tooltipDispatcher = d3.dispatch("show", "hide");
     // handles conditions drag bar
-    const conceptsDragbarDispatcher = d3.dispatch("click", 'dragstart', 'drag', 'dragend', 'toggle');
+    const conceptsDragbarDispatcher = d3.dispatch('set-state', 'dragstart', 'drag', 'dragend', 'toggle');
 
     tooltipDispatcher.on("show", function({ content, event }) {
         const containerRect = vis_container.node().getBoundingClientRect();
@@ -237,6 +449,11 @@ function render({ model, el }) {
         });
     }
 
+    function setStatus(container, status){
+        console.log('onConceptTableRowSelect status: ', status);
+        container.text(status);
+    }
+
     function toLabel(key){
         return key.split('_')
             .map(part => part.charAt(0).toUpperCase() + part.slice(1))
@@ -308,6 +525,7 @@ function render({ model, el }) {
     * Converts 3 divs into 2 panels and a dragbar
     * Parameters:
     *   dispatch: an instance of d3.dispatch
+    *   dispatch: an instance of d3.dispatch
     *   dragBar: dragbar div
     *   leftContainer: left panel div
     *   rightContainer: right panel div
@@ -371,27 +589,50 @@ function render({ model, el }) {
         // Add the grip icon
         dragBarElement.appendChild(gripIcon);
 
-        // Helper function to update panel widths
-        function updatePanelWidths(newWidthLeft, newWidthRight) {
-            leftNode.style.flex = `0 0 ${Math.max(0, newWidthLeft)}px`;
-            rightNode.style.flex = `0 0 ${Math.max(0, newWidthRight)}px`;
-        }
-
-        // Helper function to snap panels
-        function snapPanels(dx) {
+        // Helper function to calculate available width
+        function getAvailableWidth() {
             const parentRect = parentNode.getBoundingClientRect();
             const parentStyle = window.getComputedStyle(parentNode);
             const paddingLeft = parseFloat(parentStyle.paddingLeft) || 0;
             const paddingRight = parseFloat(parentStyle.paddingRight) || 0;
 
-            // Account for borders on left and right containers
             const leftBorderWidth = parseFloat(window.getComputedStyle(leftNode).borderLeftWidth) +
                 parseFloat(window.getComputedStyle(leftNode).borderRightWidth);
             const rightBorderWidth = parseFloat(window.getComputedStyle(rightNode).borderLeftWidth) +
                 parseFloat(window.getComputedStyle(rightNode).borderRightWidth);
 
             const totalWidth = parentRect.width - paddingLeft - paddingRight;
-            const availableWidth = totalWidth - dragBarWidth - leftBorderWidth - rightBorderWidth;
+            return totalWidth - dragBarWidth - leftBorderWidth - rightBorderWidth;
+        }
+
+        // Helper function to update panel widths
+        function updatePanelWidths(newWidthLeft, newWidthRight) {
+            leftNode.style.flex = `0 0 ${Math.max(0, newWidthLeft)}px`;
+            rightNode.style.flex = `0 0 ${Math.max(0, newWidthRight)}px`;
+        }
+
+        // Helper function to set state
+        function setInternalState(state) {
+            console.log("state", state);
+            const availableWidth = getAvailableWidth();
+
+            if (state === 'left-full') {
+                updatePanelWidths(availableWidth, 0);
+                isRightPanelOpen = false;
+            } else if (state === 'right-full') {
+                updatePanelWidths(0, availableWidth);
+                isRightPanelOpen = true;
+            } else if (state === 'split') {
+                const halfWidth = availableWidth / 2;
+                updatePanelWidths(halfWidth, halfWidth);
+                isRightPanelOpen = true;
+                lastOpenWidth = halfWidth;
+            }
+        }
+
+        // Helper function to snap panels
+        function snapPanels(dx) {
+            const availableWidth = getAvailableWidth();
 
             const newWidthLeft = startWidthLeft + dx;
             const newWidthRight = startWidthRight - dx;
@@ -493,20 +734,7 @@ function render({ model, el }) {
         }
 
         function onDoubleClick(event) {
-            const parentRect = parentNode.getBoundingClientRect();
-            const parentStyle = window.getComputedStyle(parentNode);
-            const paddingLeft = parseFloat(parentStyle.paddingLeft) || 0;
-            const paddingRight = parseFloat(parentStyle.paddingRight) || 0;
-
-            // Account for borders on left and right containers
-            const leftBorderWidth = parseFloat(window.getComputedStyle(leftNode).borderLeftWidth) +
-                parseFloat(window.getComputedStyle(leftNode).borderRightWidth);
-            const rightBorderWidth = parseFloat(window.getComputedStyle(rightNode).borderLeftWidth) +
-                parseFloat(window.getComputedStyle(rightNode).borderRightWidth);
-
-            const totalWidth = parentRect.width - paddingLeft - paddingRight;
-            const availableWidth = totalWidth - dragBarWidth - leftBorderWidth - rightBorderWidth;
-
+            const availableWidth = getAvailableWidth();
             const currentLeftWidth = leftNode.getBoundingClientRect().width;
             const currentRightWidth = rightNode.getBoundingClientRect().width;
 
@@ -544,75 +772,15 @@ function render({ model, el }) {
         dragBarElement.addEventListener('pointercancel', onPointerCancel);
         dragBarElement.addEventListener('dblclick', onDoubleClick);
 
+        dispatch.on('set-state', (state) => {
+            console.log('handling state change. state = ', state);
+            setInternalState(state);
+        });
+
         // Initialize panel state based on initialRightPanelOpen
         if (!initialRightPanelOpen) {
-            const parentRect = parentNode.getBoundingClientRect();
-            const parentStyle = window.getComputedStyle(parentNode);
-            const paddingLeft = parseFloat(parentStyle.paddingLeft) || 0;
-            const paddingRight = parseFloat(parentStyle.paddingRight) || 0;
-
-            const leftBorderWidth = parseFloat(window.getComputedStyle(leftNode).borderLeftWidth) +
-                parseFloat(window.getComputedStyle(leftNode).borderRightWidth);
-            const rightBorderWidth = parseFloat(window.getComputedStyle(rightNode).borderLeftWidth) +
-                parseFloat(window.getComputedStyle(rightNode).borderRightWidth);
-
-            const totalWidth = parentRect.width - paddingLeft - paddingRight;
-            const availableWidth = totalWidth - dragBarWidth - leftBorderWidth - rightBorderWidth;
-
-            updatePanelWidths(availableWidth, 0);
+            setInternalState('left-full');
         }
-
-        // Public API
-        return {
-            dispatch,
-            destroy() {
-                dragBarElement.removeEventListener('mouseenter', onMouseEnter);
-                dragBarElement.removeEventListener('mouseleave', onMouseLeave);
-                dragBarElement.removeEventListener('pointerdown', onPointerDown);
-                dragBarElement.removeEventListener('pointermove', onPointerMove);
-                dragBarElement.removeEventListener('pointerup', onPointerUp);
-                dragBarElement.removeEventListener('pointercancel', onPointerCancel);
-                dragBarElement.removeEventListener('dblclick', onDoubleClick);
-                if (gripIcon.parentNode) {
-                    gripIcon.parentNode.removeChild(gripIcon);
-                }
-            },
-            getState() {
-                return {
-                    isRightPanelOpen,
-                    lastOpenWidth,
-                    leftWidth: leftNode.getBoundingClientRect().width,
-                    rightWidth: rightNode.getBoundingClientRect().width
-                };
-            },
-
-            setState(state) {
-                const parentRect = parentNode.getBoundingClientRect();
-                const parentStyle = window.getComputedStyle(parentNode);
-                const paddingLeft = parseFloat(parentStyle.paddingLeft) || 0;
-                const paddingRight = parseFloat(parentStyle.paddingRight) || 0;
-
-                // Account for borders on left and right containers
-                const leftBorderWidth = parseFloat(window.getComputedStyle(leftNode).borderLeftWidth) +
-                    parseFloat(window.getComputedStyle(leftNode).borderRightWidth);
-                const rightBorderWidth = parseFloat(window.getComputedStyle(rightNode).borderLeftWidth) +
-                    parseFloat(window.getComputedStyle(rightNode).borderRightWidth);
-
-                const totalWidth = parentRect.width - paddingLeft - paddingRight;
-                const availableWidth = totalWidth - dragBarWidth - leftBorderWidth - rightBorderWidth;
-
-                if (state === 'left-full') {
-                    updatePanelWidths(availableWidth, 0);
-                    isRightPanelOpen = false;
-                } else if (state === 'right-full') {
-                    updatePanelWidths(0, availableWidth);
-                    isRightPanelOpen = true;
-                } else if (state === 'split' && lastOpenWidth) {
-                    updatePanelWidths(availableWidth - lastOpenWidth, lastOpenWidth);
-                    isRightPanelOpen = true;
-                }
-            }
-        };
     }
 
     /*
@@ -1095,35 +1263,44 @@ function render({ model, el }) {
 
     /**
      * Renders a collapsible hierarchical table as SVG using D3
-     * @param {Object|Array} data - Hierarchical data (single object or array of root nodes)
+     * @param {Object|Array} tree - Hierarchical data (single object or array of root nodes)
      * @param {Array} columns - Column definitions
      * @param {string} container - Container node
      * @param {Object} options - Optional configuration
      */
-    function HierarchicalTable(data, columns, container, options = {}) {
-        // Default options - matched to ConceptsTable
+    function HierarchicalTable(tree, columns, container, options = {}) {
+        // Default options
         const config = {
-            rowHeight: 30,              // Match ConceptsTable row_height
-            headerHeight: 30,           // Match ConceptsTable header height
-            indentWidth: 20,            // Same as ConceptsTable
-            iconWidth: 30,              // Similar to ConceptsTable text_offset
-            fontSize: 12,               // Match ConceptsTable font_size
-            headerFontSize: 12,         // Match ConceptsTable header font
+            rowHeight: 30,
+            headerHeight: 30,
+            indentWidth: 20,
+            iconWidth: 30,
+            fontSize: 12,
+            headerFontSize: 12,
             childrenField: 'children',
-            textOffsetX: 10,            // Match ConceptsTable text_offset_x
+            textOffsetX: 10,
 
-            // Colors matched to ConceptsTable
-            backgroundColor: '#f0f0f0',      // Match cell background
-            alternateRowColor: '#f0f0f0',    // ConceptsTable doesn't alternate in body
-            headerColor: '#d0d0d0',          // Match ConceptsTable header
-            headerTextColor: '#000000',      // ConceptsTable uses black text
+            // Colors
+            backgroundColor: '#f0f0f0',
+            alternateRowColor: '#f0f0f0',
+            headerColor: '#d0d0d0',
+            headerTextColor: '#000000',
             textColor: '#333333',
-            borderColor: '#ccc',             // Match ConceptsTable stroke
-            hoverColor: '#e8f5e9',           // Keep hover effect
+            borderColor: '#ccc',
+            hoverColor: '#d0d0d0',
             expandIconColor: '#4CAF50',
-            selectedBorderColor: '#4CAF50',  // For selected rows
+            selectedBorderColor: '#4CAF50',
+            callerNodeColor: '#f0ffff',
+            callerNodeBorderColor: '#f0f0f0',
             ...options
         };
+
+        // Extract caller node ID and root nodes from data
+        console.log('tree.caller_node_id = ', tree.caller_node_id);
+        console.log('tree.parents = ', tree.parents);
+
+        const callerNodeId = tree.caller_node_id;
+        const rootNodes = tree.parents;
 
         // Handle container (DOM element or D3 selection)
         let d3Container;
@@ -1135,44 +1312,44 @@ function render({ model, el }) {
             d3Container = d3.select(container);
         }
 
-        if (d3Container.empty()) {
-            console.error('Container not found or empty');
-            return;
-        }
-
-        // Ensure data is array
-        const rootNodes = Array.isArray(data) ? data : [data];
-
-        if (rootNodes.length === 0) {
-            d3Container.html('<p style="padding: 20px; color: #999;">No data to display</p>');
-            return;
-        }
-
-        // Flatten tree structure with metadata
-        const rows = [];
-        function flattenTree(node, level = 0, parentIndex = null) {
-            const rowIndex = rows.length;
-            const children = node[config.childrenField];
-            const hasChildren = children && Array.isArray(children) && children.length > 0;
-
-            rows.push({
-                index: rowIndex,
-                parentIndex: parentIndex,
-                level: level,
-                data: node,
-                hasChildren: hasChildren,
-                expanded: false,
-                visible: level === 0
+        // Initialize expanded state on all nodes (collapsed by default)
+        function initializeNodes(nodes) {
+            nodes.forEach(node => {
+                if (node._expanded === undefined) {
+                    node._expanded = false;
+                }
+                const children = node[config.childrenField];
+                if (children && Array.isArray(children) && children.length > 0) {
+                    initializeNodes(children);
+                }
             });
+        }
 
-            if (hasChildren) {
-                children.forEach(child => {
-                    flattenTree(child, level + 1, rowIndex);
+        // Helper: Get all visible rows from tree structure
+        function getVisibleRows() {
+            const visible = [];
+
+            function traverse(nodes, level = 0) {
+                nodes.forEach(node => {
+                    // Add this node
+                    visible.push({
+                        node: node,
+                        level: level
+                    });
+
+                    // If expanded, add visible children
+                    if (node._expanded) {
+                        const children = node[config.childrenField];
+                        if (children && Array.isArray(children) && children.length > 0) {
+                            traverse(children, level + 1);
+                        }
+                    }
                 });
             }
-        }
 
-        rootNodes.forEach(node => flattenTree(node));
+            traverse(rootNodes);
+            return visible;
+        }
 
         // Helper: Get field value (supports nested fields)
         function getFieldValue(obj, field) {
@@ -1212,50 +1389,19 @@ function render({ model, el }) {
             return String(value);
         }
 
-        // Calculate initial column positions
+        // Calculate column positions
         function calculateColumnPositions() {
             let xOffset = config.iconWidth;
             columns.forEach(col => {
                 col.x = xOffset;
-                if (!col.width) col.width = 150; // Set default width if not specified
+                if (!col.width) col.width = 150;
                 xOffset += col.width;
             });
         }
 
-        calculateColumnPositions();
-
         // Calculate total width
         function getTotalWidth() {
             return config.iconWidth + columns.reduce((sum, col) => sum + col.width, 0);
-        }
-
-        const visibleRows = rows.filter(r => r.visible);
-
-        // Create SVG
-        d3Container.html('');
-        const svg = d3Container
-            .append('svg')
-            .attr('width', getTotalWidth())
-            .attr('height', config.headerHeight + (visibleRows.length * config.rowHeight))
-            .style('font-family', 'Arial, sans-serif')
-            .style('font-size', config.fontSize + 'px');
-
-        // Track selected rows
-        let selectedRows = new Set();
-
-        // Helper: Check if a row should be visible based on all ancestor states
-        function shouldRowBeVisible(row) {
-            if (row.level === 0) return true;
-
-            let currentRow = row;
-            while (currentRow.parentIndex !== null) {
-                const parent = rows[currentRow.parentIndex];
-                if (!parent.expanded) {
-                    return false;
-                }
-                currentRow = parent;
-            }
-            return true;
         }
 
         // Draw header
@@ -1315,22 +1461,17 @@ function render({ model, el }) {
                             const newWidth = Math.max(30, col.startWidth + dx);
                             col.width = newWidth;
 
-                            // Recalculate positions for all columns after this one
                             calculateColumnPositions();
 
-                            // Update header
                             d3.select(this.parentNode).select('rect:first-of-type')
                                 .attr('width', newWidth);
                             d3.select(this).attr('x', newWidth - 5);
 
-                            // Update all header positions
                             header.selectAll('.header-group')
                                 .attr('transform', (d, i) => `translate(${columns[i].x}, 0)`);
 
-                            // Update SVG width
                             svg.attr('width', getTotalWidth());
 
-                            // Redraw rows with new column widths
                             drawRows();
                         })
                         .on('end', function() {
@@ -1341,14 +1482,35 @@ function render({ model, el }) {
             });
         }
 
+        // Helper: Check if node has children (or could have children to fetch)
+        function hasChildren(node) {
+            // If there's a hasChildren property, use that
+            if (node.hasChildren !== undefined) {
+                return node.hasChildren;
+            }
+
+            // If there's a childCount property, use that
+            if (node.childCount !== undefined) {
+                return node.childCount > 0;
+            }
+
+            // Otherwise fall back to checking if children array exists and has items
+            const children = node[config.childrenField];
+            return children && Array.isArray(children) && children.length > 0;
+        }
+
+        // Check if node is the caller node
+        function isCallerNode(node) {
+            if (!callerNodeId) return false;
+            const matches = node.concept_id === callerNodeId;
+            console.log('Checking node concept_id:', node.concept_id, 'against caller:', callerNodeId, 'matches:', matches);
+            return matches;
+        }
+
         // Draw rows
         function drawRows() {
-            // Update visibility based on ancestor states
-            rows.forEach(row => {
-                row.visible = shouldRowBeVisible(row);
-            });
-
-            const visibleRows = rows.filter(r => r.visible);
+            const visibleRows = getVisibleRows();
+            console.log('visibleRows = ', visibleRows);
 
             // Update SVG height
             const newHeight = config.headerHeight + (visibleRows.length * config.rowHeight);
@@ -1370,63 +1532,42 @@ function render({ model, el }) {
             rowGroups.append('rect')
                 .attr('width', getTotalWidth())
                 .attr('height', config.rowHeight)
-                .attr('fill', config.backgroundColor)
+                .attr('fill', d => {
+                    const isCaller = isCallerNode(d.node);
+                    return isCaller ? config.callerNodeColor : config.backgroundColor;
+                })
                 .attr('stroke', config.borderColor)
                 .attr('stroke-width', 0.5)
                 .on('mouseenter', function() {
                     d3.select(this).attr('fill', config.hoverColor);
                 })
                 .on('mouseleave', function(event, d) {
-                    const rowId = d.data.id || d.data.concept_code || JSON.stringify(d.data);
-                    const isSelected = selectedRows.has(rowId);
-                    d3.select(this).attr('fill', isSelected ? config.hoverColor : config.backgroundColor);
+                    const nodeId = getNodeId(d.node);
+                    const isSelected = selectedRows.has(nodeId);
+                    const isCaller = isCallerNode(d.node);
+
+                    if (isSelected) {
+                        d3.select(this).attr('fill', config.hoverColor);
+                    } else if (isCaller) {
+                        d3.select(this).attr('fill', config.callerNodeColor);
+                    } else {
+                        d3.select(this).attr('fill', config.backgroundColor);
+                    }
                 })
                 .on('click', function(event, d) {
                     handleRowClick(d, d3.select(this.parentNode));
                 });
 
-            // Expand/collapse icons in first column
-            rowGroups.each(function(d) {
-                const g = d3.select(this);
-                const iconX = d.level * config.indentWidth + 10;
-
-                if (d.hasChildren) {
-                    // Clickable expand/collapse icon
-                    const iconGroup = g.append('g')
-                        .style('cursor', 'pointer')
-                        .on('click', function(event) {
-                            toggleRow(d);
-                            event.stopPropagation();
-                        });
-
-                    iconGroup.append('text')
-                        .attr('x', iconX)
-                        .attr('y', config.rowHeight / 2)
-                        .attr('dy', '0.35em')
-                        .attr('fill', config.expandIconColor)
-                        .attr('font-size', config.fontSize)
-                        .attr('font-weight', 'bold')
-                        .text(d.expanded ? '▼' : '▶');
-                } else {
-                    // Leaf node bullet
-                    g.append('circle')
-                        .attr('cx', iconX + 5)
-                        .attr('cy', config.rowHeight / 2)
-                        .attr('r', 3)
-                        .attr('fill', config.expandIconColor);
-                }
-            });
-
-            // Data cells
+            // Data cells (draw these before icons so icons are on top)
             rowGroups.each(function(d) {
                 const g = d3.select(this);
 
                 columns.forEach((col, colIndex) => {
-                    const value = getFieldValue(d.data, col.field);
+                    const value = getFieldValue(d.node, col.field);
                     const formattedValue = formatValue(value, col);
                     const align = col.align || 'left';
 
-                    // Cell background (for individual cell styling if needed)
+                    // Cell background
                     g.append('rect')
                         .attr('x', col.x)
                         .attr('width', col.width)
@@ -1438,7 +1579,7 @@ function render({ model, el }) {
                     let textX = col.x + config.textOffsetX;
                     let textAnchor = 'start';
 
-                    // For first column, add extra offset to account for indent and icon
+                    // For first column, add extra offset for indent and icon
                     if (colIndex === 0) {
                         const extraIndent = d.level * config.indentWidth + 20;
                         textX = col.x + extraIndent;
@@ -1462,28 +1603,106 @@ function render({ model, el }) {
                         .text(formattedValue);
                 });
             });
+
+            // Expand/collapse icons in first column (draw AFTER cells so they're on top)
+            rowGroups.each(function(d) {
+                const g = d3.select(this);
+                const iconX = d.level * config.indentWidth + 10;
+
+                if (hasChildren(d.node)) {
+                    // Clickable expand/collapse icon
+                    const iconGroup = g.append('g')
+                        .style('cursor', 'pointer')
+                        .on('click', function(event) {
+                            // Check if we need to fetch children
+                            const children = d.node[config.childrenField];
+                            const needsFetch = !children || children.length === 0;
+
+                            if (needsFetch && config.onExpandUnfetched) {
+                                // Call callback to fetch children
+                                config.onExpandUnfetched(d.node, () => {
+                                    // After fetch completes, expand and redraw
+                                    d.node._expanded = true;
+                                    drawRows();
+                                });
+                            } else {
+                                // Toggle expanded state directly on the node
+                                d.node._expanded = !d.node._expanded;
+
+                                // If collapsing, collapse all descendants
+                                if (!d.node._expanded) {
+                                    collapseAllDescendants(d.node);
+                                }
+
+                                drawRows();
+                            }
+
+                            event.stopPropagation();
+                        });
+
+                    iconGroup.append('text')
+                        .attr('x', iconX)
+                        .attr('y', config.rowHeight / 2)
+                        .attr('dy', '0.35em')
+                        .attr('fill', config.expandIconColor)
+                        .attr('font-size', config.fontSize)
+                        .attr('font-weight', 'bold')
+                        .text(d.node._expanded ? '▼' : '▶');
+                } else {
+                    // Leaf node bullet
+                    g.append('circle')
+                        .attr('cx', iconX + 5)
+                        .attr('cy', config.rowHeight / 2)
+                        .attr('r', 3)
+                        .attr('fill', config.expandIconColor);
+                }
+
+                // Add caller node indicator border if this is the caller node
+                if (isCallerNode(d.node)) {
+                    g.append('rect')
+                        .attr('class', 'caller-border')
+                        .attr('x', 0)
+                        .attr('y', 0)
+                        .attr('width', getTotalWidth())
+                        .attr('height', config.rowHeight)
+                        .attr('fill', 'none')
+                        .attr('stroke', config.callerNodeBorderColor)
+                        .attr('stroke-width', 2)
+                        .style('pointer-events', 'none');
+                }
+            });
+        }
+
+        // Get ID for a node
+        function getNodeId(node) {
+            // console.log('node.conceptid', node.concept_id)
+            return node.concept_id;
         }
 
         // Handle row click (selection)
-        function handleRowClick(row, rowGroup) {
-            const rowId = row.data.id || row.data.concept_code || JSON.stringify(row.data);
+        function handleRowClick(rowData, rowGroup) {
+            const nodeId = getNodeId(rowData);
+            const isCaller = isCallerNode(rowData);
 
-            if (selectedRows.has(rowId)) {
+            if (selectedRows.has(nodeId)) {
                 // Deselect
-                selectedRows.delete(rowId);
-                rowGroup.select('rect').attr('fill', config.backgroundColor);
+                selectedRows.delete(nodeId);
+                rowGroup.select('rect').attr('fill', isCaller ? config.callerNodeColor : config.backgroundColor);
                 rowGroup.select('.row-border').remove();
             } else {
                 // Clear previous selections
                 selectedRows.clear();
-                svg.selectAll('.data-row rect:first-of-type').attr('fill', config.backgroundColor);
+                svg.selectAll('.data-row rect:first-of-type').each(function(d) {
+                    const isCallerRow = isCallerNode(d.node);
+                    d3.select(this).attr('fill', isCallerRow ? config.callerNodeColor : config.backgroundColor);
+                });
                 svg.selectAll('.row-border').remove();
 
                 // Select this row
-                selectedRows.add(rowId);
+                selectedRows.add(nodeId);
                 rowGroup.select('rect').attr('fill', config.hoverColor);
 
-                // Add selection border (similar to ConceptsTable)
+                // Add selection border
                 rowGroup.append('rect')
                     .attr('class', 'row-border')
                     .attr('x', 0)
@@ -1498,31 +1717,45 @@ function render({ model, el }) {
 
             // Optional: Call callback if provided
             if (config.onRowSelect) {
-                config.onRowSelect(row.data, selectedRows.has(rowId));
+                config.onRowSelect(rowData.node, selectedRows.has(nodeId));
             }
-        }
-
-        // Toggle row expansion
-        function toggleRow(row) {
-            row.expanded = !row.expanded;
-
-            // If collapsing, collapse all descendants
-            if (!row.expanded) {
-                collapseAllDescendants(row);
-            }
-
-            drawRows();
         }
 
         // Recursively collapse all descendants
-        function collapseAllDescendants(row) {
-            rows.forEach(r => {
-                if (r.parentIndex === row.index) {
-                    r.expanded = false;
-                    collapseAllDescendants(r);
-                }
-            });
+        function collapseAllDescendants(node) {
+            const children = node[config.childrenField];
+            if (children && Array.isArray(children)) {
+                children.forEach(child => {
+                    child._expanded = false;
+                    collapseAllDescendants(child);
+                });
+            }
         }
+
+        if (d3Container.empty()) {
+            console.error('Container not found or empty');
+            return;
+        }
+
+        if (rootNodes.length === 0) {
+            d3Container.html('<p style="padding: 20px; color: #999;">No data to display</p>');
+            return;
+        }
+
+        initializeNodes(rootNodes);
+        calculateColumnPositions();
+
+        // Create SVG
+        d3Container.html('');
+        const svg = d3Container
+            .append('svg')
+            .attr('width', getTotalWidth())
+            .attr('height', config.headerHeight)
+            .style('font-family', 'Arial, sans-serif')
+            .style('font-size', config.fontSize + 'px');
+
+        // Track selected rows
+        let selectedRows = new Set();
 
         // Initial draw
         drawHeader();
@@ -1536,7 +1769,7 @@ function render({ model, el }) {
 
     // <editor-fold desc="---------- CONCEPTS TABLE FUNCTIONS ----------">
 
-    function ConceptsTable(dispatch, data, shortnames = [], options = {}){
+    function ConceptsTable(dispatch, data, total_counts = [],  shortnames = [], options = {}){
 
         const {
             dimensions = { height: 432, row_height: 30 },
@@ -1554,14 +1787,28 @@ function render({ model, el }) {
         let current_page = 0;
         let page_size = pageSize;
 
+        // TODO: Show counts as fractions of total for each series (check that series 2 exists as well)
         function getTooltipContent(d, series_name){
-            // console.log('getTooltipContent d = ', d);
             const heading = `<strong>Concept: ${d.concept_code}</strong><br>(${d.concept_name})<hr>`;
             let msg = ` (no difference)`;
             if(series_name !== "")
-                msg = ` (higher in ${series_name})`;
+                msg = `${d} (higher in ${series_name})`;
             return `${heading} Diff. in Prev: ${Math.abs(d.difference_in_prevalence).toFixed(prevalence_dp)}<br>${msg}`;
         }
+
+        // function getTooltipContent(d, series_name, counts = [], total_counts = [], shortnames = []){
+        //     console.log('getTooltipContent d = ', d);
+        //     const heading = `<strong>Concept: ${d.concept_code}</strong><br>(${d.concept_name})<hr>`;
+        //     let msg = ` (no difference)`;
+        //     if(series_name !== "")
+        //         msg = `${d} (higher in ${series_name})`;
+        //
+        //     msg += `&emsp; ${shortnames[0]}: &emsp; &emsp ${shortnames[1]}: `;
+        //
+        //     msg += `&emsp ${formatFraction(counts[0] || 0, total_counts[0])} &emsp; ${formatFraction(counts[1] || 0, total_counts[1])}`;
+        //
+        //     return `${heading} Diff. in Prev: ${Math.abs(d.difference_in_prevalence).toFixed(prevalence_dp)}<br>${msg}`;
+        // }
 
         function prepareCondOccurCompareData() {
             // Add calculated fields
@@ -1711,7 +1958,7 @@ function render({ model, el }) {
         // </editor-fold>
 
         // ==== Validation for required params ====
-        console.log('data type = ', getType(data))
+        // console.log('data type = ', getType(data))
         if (!dataEntityExists(data)) {
             throw new Error("ConceptsTable requires at least one cohort.");
         }
@@ -1787,18 +2034,18 @@ function render({ model, el }) {
             columns_data = [
                 { text: headers_text[2], field: "concept_code",  x: 0,   width: 160 },
                 { text: headers_text[1], field: "concept_name",  x: 160, width: 590 },
-                { text: headers_text[8], field: "count_in_cohort", x: 750, width: 157 },
-                { text: headers_text[7], field: "prevalence", x: 907, width: 160 }
+                { text: headers_text[8], field: "count_in_cohort", x: 750, width: 160 },
+                { text: headers_text[7], field: "prevalence", x: 910, width: 160 }
             ];
         }
         else{
             columns_data = [
-                { text: headers_text[7], field: "depth", x: 0, width: 60, type: 'text' },
+                { text: headers_text[6], field: "depth", x: 0, width: 60, type: 'text' },
                 { text: headers_text[2], field: "concept_code", x: 60, width: 140, type: 'text' },
                 { text: headers_text[1], field: "concept_name", x: 200, width: 350, type: 'text' },
-                { text: headers_text[10], field: "cohort2_prevalence", x: 550, width: 140, type: 'text' },
-                { text: headers_text[8], field: "difference_in_prevalence", x: 690, width: 237, type: 'compare_bars' },
-                { text: headers_text[9], field: "cohort1_prevalence", x: 927, width: 140, type: 'text' }
+                { text: headers_text[8], field: "cohort1_prevalence", x: 550, width: 140, type: 'text' },
+                { text: headers_text[7], field: "difference_in_prevalence", x: 690, width: 240, type: 'compare_bars' },
+                { text: headers_text[9], field: "cohort2_prevalence", x: 930, width: 140, type: 'text' }
             ];
         }
 
@@ -1876,7 +2123,6 @@ function render({ model, el }) {
             if (normalized === "") {
                 filtered_data = [...table_data]; // Show all data
             } else {
-                // TODO: clear selected row here
                 filtered_data = table_data.filter(d => {
                     const code = d.concept_code.toLowerCase();
                     const name = d.concept_name.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -2194,14 +2440,14 @@ function render({ model, el }) {
                                     .attr("y", innerY)
                                     .attr("width", biasScale(Math.abs(d.metrics['1'].prevalence)))
                                     .attr("height", innerH)
-                                    .attr("fill", "lightslategrey");
+                                    .attr("fill", "#669999");
 
                                 // Text: show the bias value
                                 g.append("text")
                                     .attr("x", 4)  // small left inset
                                     .attr("y", outerHeight / 2 + 4)
                                     .attr("font-size", font_size)
-                                    .attr("fill", "black")
+                                    .attr("fill", "#000")
                                     .text(Math.abs(d.metrics['1'].count !== null ? Math.abs(d.metrics['1'].count).toFixed(prevalence_dp) :
                                         dafault_prevalence.toFixed(prevalence_dp)));
                             });
@@ -2209,7 +2455,7 @@ function render({ model, el }) {
 
                         case "compare_bars":
                             barScale
-                                .domain([-max_diff || -1, max_diff || 1])
+                                .domain([max_diff || 1, -max_diff || -1])
                                 .range([margin, col.width - margin]);  // full available space inside cell
 
                             zeroX = barScale(0);
@@ -2232,10 +2478,9 @@ function render({ model, el }) {
 
                                 const diff_val = d.difference_in_prevalence;
                                 const abs_diff = Math.abs(diff_val);
-                                // console.log('d', d);
 
                                 // Bar (only if difference is significant enough to be visible)
-                                if (abs_diff >= 0.001) {
+                                // if (abs_diff >= 0.001) {
                                     g.append("rect")
                                         .attr("x", Math.min(zeroX, barScale(diff_val)))
                                         .attr("y", innerY)
@@ -2243,24 +2488,25 @@ function render({ model, el }) {
                                         .attr("height", innerH)
                                         .attr("fill", diff_val < 0 ? color(shortnames[1]) : color(shortnames[0]))
                                         .on("mouseover", function (event, d) {
+                                            console.log('d = ', d)
                                             const highest_prevalence = getHighestPrevalenceSeriesName(d);
                                             let highest_series_name = "";
                                             if(highest_prevalence >= 0)
                                                 highest_series_name = shortnames[highest_prevalence];
 
                                             tooltipDispatcher.call("show", null, {
-                                                content: getTooltipContent(d, highest_series_name),
+                                                content: getTooltipContent(d, highest_series_name, ),
                                                 event: event
                                             });
                                         })
                                         .on("mouseout", function () {
                                             tooltipDispatcher.call("hide");
                                         });
-                                }
+                                // }
 
                                 // Invisible hover rectangle for small/zero values
-                                if (abs_diff <= 0.005) {
-                                    const hover_width = barScale(0.2) - barScale(0); // Width for 0.2 difference
+                                if (abs_diff <= 0.001) {
+                                    const hover_width = Math.abs(0.01 - barScale(0));
                                     g.append("rect")
                                         .attr("x", zeroX - hover_width/2)
                                         .attr("y", innerY)
@@ -2310,41 +2556,78 @@ function render({ model, el }) {
             });
         }
 
-        // callback function for handling row selection
         async function onConceptTableRowSelect(rowData, isSelected) {
-            // rowData includes children data, so we don't need to request it
+
+            // Helper function to show default message
+            function showNoDataMessage() {
+                d3.select(concepts_parents_row.node())
+                    .append('p')
+                    .style('padding', '8px')
+                    .style('color', '#666')
+                    .style('font-size', '12px')
+                    .text('No data to display.');
+            }
+
             console.log(`Row ${isSelected ? 'selected' : 'deselected'}:`, rowData);
 
+            // Cancel any pending requests when selection changes
+            requestManager.cancelAll();
+            // Clear the right panel
+            d3.select(concepts_parents_row.node()).selectAll('*').remove();
+            // Open or close the right panel depending on selection state
+            conceptsDragbarDispatcher.call('set-state', null, isSelected ? 'split' : 'left-full');
+
             if (!isSelected) {
-                concept_hiertable_col.innerHtml = 'No data to show.'
+                showNoDataMessage();
                 return;
             }
 
+            // Fetch parent nodes with progress indicator
             try {
-                // request parents data from Python
-                const parentData = await requestManager.request("get_parent_nodes", {
-                    node_id: rowData.id,
-                    parent_ids: rowData.parent_ids
-                });
-                // console.log("Received parent data:", parentData);
+                const parentData = await requestManager.request(
+                    "get_parent_nodes",
+                    {
+                        node_id: rowData.concept_id,
+                        parent_ids: rowData.parent_ids
+                    },
+                    {
+                        statusMessage: "Loading parent nodes...",
+                        progressContainer: concepts_parents_row.node(),
+                        showProgress: true
+                    }
+                );
 
-                // update the new table with the data
-                updateRelatedTable(parentData, rowData);
-                // Now that the table is ready, trigger the panel to show
-                conceptsDragbarDispatcher.call("click", this, isSelected);
+                console.log("Received parents data:", parentData);
+
+                // Update the table with the data
+                updateParentsTable(parentData);
 
             } catch (error) {
-                console.error("Error fetching related data:", error);
-                // TODO: handle error - maybe show a message to the user
+                if (error.message === 'Request cancelled') {
+                    console.log('Parent nodes request was cancelled');
+                    // Deselect the row when cancelled
+                    // Show default message for cancelled requests
+                    showNoDataMessage();
+                } else {
+                    console.error("Error fetching parent nodes:", error);
+
+                    // Show error message in the panel
+                    d3.select(concepts_parents_row.node()).selectAll('*').remove();
+                    d3.select(concepts_parents_row.node())
+                        .append('p')
+                        .style('padding', '8px')
+                        .style('color', '#f44336')
+                        .style('font-size', '12px')
+                        .text(`Error: ${error.message || 'Failed to fetch parent nodes'}`);
+                }
             }
         }
 
-        function updateRelatedTable(parentData, rowData) {
+        function updateParentsTable(parentsData) {
             // Your logic to populate the new table with parents and children
             // For example:
             // const { parents, children } = relatedData;
-            console.log("Parent Data:", parentData);
-            console.log("Row Data:", rowData);
+            console.log("Parent Data:", parentsData);
 
             // Column definitions
             const columns = [
@@ -2358,14 +2641,15 @@ function render({ model, el }) {
             // TODO: use columns here
 
             // Update table with parents
-            let parents_row = concept_hiertable_col.append('div').attr('class', 'row-container');
+            concept_hier_table_col.innerHTML = ''; // clear any existing table
+            let parents_row = concept_hier_table_col.append('div').attr('class', 'row-container');
             // let parents_col = parents_row.append('div').attr('class', 'col-container');
-            // concept_hiertable_col.append('h1').text('Parent Nodes');
-            HierarchicalTable(parentData['parents'], columns, parents_row);
+            // concept_hier_table_col.append('h1').text('Parent Nodes');
+            HierarchicalTable(parentsData, columns, parents_row);
 
             // Update table with children
-            // let children_row = concept_hiertable_col.append('div').attr('class', 'row-container');
-            // concept_hiertable_col.append('h1').text('Child Nodes');
+            // let children_row = concept_hier_table_col.append('div').attr('class', 'row-container');
+            // concept_hier_table_col.append('h1').text('Child Nodes');
             // let children_col = children_row.append('div').attr('class', 'col-container');
             // HierarchicalTable(rowData['children'], columns, children_row);
         }
@@ -2545,15 +2829,8 @@ function render({ model, el }) {
     const dragbar_col = concepts_tables_row.append('div').attr('class', 'drag-bar');
     const concept_hier_table_col = concepts_tables_row.append('div').attr('class', 'col-container col-collapsed');
 
-    // the container row for the concepts table itself
-    // const div_concepts_table = concepts_col.append('div').attr('class', 'row-container');
-
-    // TODO: define these rows here
-    // const parents_row = concept_hier_table_col.append('div').attr('class', 'row-container').style('flex', '0 0 0px');
-    // const children_row = concept_hier_table_col.append('div').attr('class', 'row-container').style('flex', '0 0 0px');
-
     // Add resizing functionality to the structure you created
-    const resizablePanel = MakeDragBar({
+    const conceptsResizablePanel = MakeDragBar({
         dispatch: conceptsDragbarDispatcher,
         dragBar: dragbar_col,
         leftContainer: concepts_table_col,
@@ -2561,6 +2838,9 @@ function render({ model, el }) {
         parentContainer: concepts_tables_row,
         visContainer: vis_container
     });
+
+    const concepts_parents_row = concept_hier_table_col.append('div').attr('class', 'row-container concepts-tables-row');
+    const concepts_children_row = concept_hier_table_col.append('div').attr('class', 'row-container concepts-tables-row');
 
     // </editor-fold>
 
@@ -2612,7 +2892,7 @@ function render({ model, el }) {
     );
 
     concepts_table_col.append(() =>
-        ConceptsTable(conceptsTableDispatcher, cond_hier, [cohort1_shortname, cohort2_shortname])
+        ConceptsTable(conceptsTableDispatcher, cond_hier, [cohort1_stats[0].total_count, cohort2_stats[0].total_count], [cohort1_shortname, cohort2_shortname])
     );
 
     // </editor-fold>

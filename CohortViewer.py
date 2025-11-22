@@ -6,7 +6,9 @@ import pathlib
 from datetime import datetime, date
 from decimal import Decimal
 import numpy as np
-from statistics import mode
+import json
+from copy import deepcopy
+# from statistics import mode
 # from biasanalyzer.background.threading_utils import run_in_background
 
 class CohortViewer(anywidget.AnyWidget):
@@ -37,13 +39,52 @@ class CohortViewer(anywidget.AnyWidget):
     request = t.Unicode('').tag(sync=True)
     response = t.Unicode('').tag(sync=True)
 
+    def log(self, message):
+        import datetime
+        timestamp = datetime.datetime.now().strftime('%H:%M:%S.%f')[:-3]
+        self.log_file.write(f"[{timestamp}] {message}\n")
+        self.log_file.flush()
+
+    def clear_log(self):
+        """Clear the log output"""
+        if self.log_output:
+            self.log_output.clear_output()
+
+    def log_object_type(self, msg, obj):
+        self.log(msg)
+        self.log(f"Type: {type(obj)}")
+        self.log(f"Type name: {type(obj).__name__}")
+        self.log(f"Value: {obj}")
+
+    def create_trait(self, name, trait_type, value):
+        if not value is None:
+            self.add_traits(**{name: trait_type.tag(sync=True)})
+            setattr(self, name, value)
+
+            import json
+
+    def log_format_tree(self, node, depth=0):
+        indent = "  " * depth
+        output = f"{indent}- {json.dumps(node, ensure_ascii=False)}\n"
+        # If node is a dict or list, traverse its children
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if isinstance(value, (dict, list)):
+                    output += self.log_format_tree(value, depth + 1)
+        elif isinstance(node, list):
+            for item in node:
+                output += self.log_format_tree(item, depth + 1)
+        self.log(output)
+
     @t.observe('request')
     def _handle_request(self, change):
         """Handle incoming requests from JavaScript"""
+        self.log(f'def _handle_request(self, change): {change}')
         if not change['new']:
             return
 
         try:
+            self.log(f'try to request data')
             request_data = json.loads(change['new'])
             request_id = request_data.get('id')
             request_type = request_data.get('type')
@@ -60,8 +101,10 @@ class CohortViewer(anywidget.AnyWidget):
                 'success': True
             }
             self.response = json.dumps(response_data)
+            self.log_format_tree(f'response = {self.response}')
 
         except Exception as e:
+            self.log(f'error: {e}')
             # Send error response
             response_data = {
                 'id': request_data.get('id'),
@@ -72,32 +115,69 @@ class CohortViewer(anywidget.AnyWidget):
             self.response = json.dumps(response_data)
 
     def _process_request(self, request_type, params):
+        self.log(f'processing request')
         """Route requests to appropriate handlers"""
         if request_type == 'get_parent_nodes':
             return self._get_parent_nodes(params)
         # ... other handlers
         else:
+            self.log(f'Raised ValueError: "Unknown request type: {request_type}"')
             raise ValueError(f"Unknown request type: {request_type}")
 
-    def _get_parent_nodes(self, params):
+    # def _get_parent_nodes(self, params):
+    #
+    #     """Get parents of a node"""
+    #     node_id = params.get('node_id')
+    #     parent_ids = params.get('parent_ids')
+    #
+    #     # self.log_object_type('_get_parent_nodes', self._conditionsHierarchy)
+    #     # self.log_object_type('_get_parent_nodes - parent_ids', parent_ids)
+    #
+    #     result = {'parents': []}  # Initialize with 'parents' key as a list
+    #     for parent_id in parent_ids:
+    #         parent_node = self._conditionsHierarchy.get_node(parent_id)
+    #         result['parents'].append(parent_node.to_dict())
+    #     self.log_object_type('_get_parent_nodes - result: ', result)
+    #     return result
 
-        """Get parents of a node"""
+    def _get_parent_nodes(self, params):
+        """Get parents with first 2 levels of children only"""
+        self.log(f'params: {params}')
         node_id = params.get('node_id')
         parent_ids = params.get('parent_ids')
 
-        # self.log_object_type('_get_parent_nodes', self._conditionsHierarchy)
-        # self.log_object_type('_get_parent_nodes - parent_ids', parent_ids)
+        result = {'caller_node_id': node_id, 'parents': []}
 
-        result = {}
-        result = {'parents': []}  # Initialize with 'parents' key as a list
         for parent_id in parent_ids:
             parent_node = self._conditionsHierarchy.get_node(parent_id)
-            result['parents'].append(parent_node.to_dict())
-        # self.log_object_type('_get_parent_nodes - result', result)
+            parent_dict = parent_node.to_dict()
+
+            # Prune to 2 levels (parent + 2 child levels)
+            pruned_parent = self._prune_tree(parent_dict, max_depth=2)
+            result['parents'].append(pruned_parent)
+
         return result
 
+    def _prune_tree(self, node, max_depth=2, current_depth=0):
+        """Prune tree to max_depth levels (read-only, no copying needed)"""
+        # Fast: just create new dict structure with references
+        pruned_node = {k: v for k, v in node.items() if k != 'children'}
 
-# Convert non-JSON-serializable objects to JSON-compatible types
+        # Check if the original node has children
+        has_children_in_full_tree = 'children' in node and node['children'] and len(node['children']) > 0
+        pruned_node['hasChildren'] = has_children_in_full_tree
+
+        if current_depth < max_depth and has_children_in_full_tree:
+            pruned_node['children'] = [
+                self._prune_tree(child, max_depth, current_depth + 1)
+                for child in node['children']
+            ]
+        else:
+            pruned_node['children'] = []
+
+        return pruned_node
+
+    # Convert non-JSON-serializable objects to JSON-compatible types
     def make_json_serializable(self, obj):
         if isinstance(obj, dict):
             return {key: self.make_json_serializable(value) for key, value in obj.items()}
@@ -123,7 +203,7 @@ class CohortViewer(anywidget.AnyWidget):
     ):
 
         super().__init__()
-        # self.log_file = open('./debug.log', 'a', buffering=1)  # Line buffered
+        self.log_file = open('./debug.log', 'a', buffering=1)  # Line buffered
 
         # READ PARAMETERS
 
@@ -134,28 +214,6 @@ class CohortViewer(anywidget.AnyWidget):
         self._cohort1Shortname = cohort1_shortname
         self._cohort2Shortname = cohort2_shortname
         self.initialized = True
-
-    def log(self, message):
-        import datetime
-        timestamp = datetime.datetime.now().strftime('%H:%M:%S.%f')[:-3]
-        self.log_file.write(f"[{timestamp}] {message}\n")
-        self.log_file.flush()
-
-    def clear_log(self):
-        """Clear the log output"""
-        if self.log_output:
-            self.log_output.clear_output()
-
-    def log_object_type(self, msg, obj):
-        self.log(msg)
-        self.log(f"Type: {type(obj)}")
-        self.log(f"Type name: {type(obj).__name__}")
-        self.log(f"Value: {obj}")
-
-    def create_trait(self, name, trait_type, value):
-        if not value is None:
-            self.add_traits(**{name: trait_type.tag(sync=True)})
-            setattr(self, name, value)
 
     @t.observe('initialized')
     def _on_initialized(self, change):

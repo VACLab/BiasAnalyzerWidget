@@ -184,8 +184,8 @@ h1.tight-header, h2.tight-header {
 /* concepts table row hover and select */
 
 .selected .cell-bg {
-    fill: #f8f9fa !important;
-    stroke: #ccc !important;
+    fill: #f0ffff !important;
+    /*stroke: #ccc !important;*/
 }
 
 .selected {
@@ -194,7 +194,7 @@ h1.tight-header, h2.tight-header {
 
 .row-border {
     fill: none;
-    stroke: #007bff;
+    stroke: #f0ffff;
     stroke-width: 2px;
     pointer-events: none;
 }
