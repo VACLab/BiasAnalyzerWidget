@@ -117,12 +117,12 @@ function render({ model, el }) {
 
         showSuccess(progressElement) {
             const div = d3.select(progressElement.element);
-            const spinner = d3.select(progressElement.spinner);
+            const wait_spinner = d3.select(progressElement.spinner);
             const text = d3.select(progressElement.text);
             const cancelBtn = d3.select(progressElement.cancelBtn);
 
-            // Update spinner to checkmark
-            spinner
+            // Update wait_spinner to checkmark
+            wait_spinner
                 .style('animation', 'none')
                 .style('border', 'none')
                 .style('display', 'flex')
@@ -133,14 +133,14 @@ function render({ model, el }) {
                 .style('font-size', '14px')
                 .text('✓');
 
-            text.text('Complete').style('color', '#4CAF50');
+            // text.text('Complete').style('color', '#4CAF50');
             cancelBtn.style('display', 'none');
             div.style('border-color', '#4CAF50');
 
             // Remove after brief delay
             setTimeout(() => {
                 div.remove();
-            }, 1000);
+            }, 100);
         }
 
         showError(progressElement, errorMessage) {
@@ -276,13 +276,14 @@ function render({ model, el }) {
     // <editor-fold desc="---------- DISPATCHERS ----------">
 
     // handles the concepts table
-    const conceptsTableDispatcher = d3.dispatch('filter', 'sort', 'change-dp', 'column-resize', 'view-pct');
+    const conceptsTableDispatcher =
+        d3.dispatch('select-row', 'filter', 'sort', 'change-dp', 'column-resize', 'view-pct');
     // handles the hierarchy table
     const hierarchyTableDispatcher = d3.dispatch('filter', 'sort', 'change-dp', 'column-resize', 'view-pct');
     // handles all tooltips
     const tooltipDispatcher = d3.dispatch("show", "hide");
     // handles conditions drag bar
-    const conceptsDragbarDispatcher = d3.dispatch('set-state', 'dragstart', 'drag', 'dragend', 'toggle');
+    const conceptsDragbarDispatcher = d3.dispatch('dragstart', 'drag', 'dragend', 'toggle');
 
     tooltipDispatcher.on("show", function({ content, event }) {
         const containerRect = vis_container.node().getBoundingClientRect();
@@ -367,7 +368,8 @@ function render({ model, el }) {
 
     // clears an element
     function clearElement(element) {
-        element.selectAll('*').remove();
+        if(element)
+            element.selectAll('*').remove();
     }
 
     function dataEntityExists(entity){
@@ -450,7 +452,7 @@ function render({ model, el }) {
     }
 
     function setStatus(container, status){
-        console.log('onConceptTableRowSelect status: ', status);
+        // console.log('onConceptTableRowSelect status: ', status);
         container.text(status);
     }
 
@@ -492,7 +494,7 @@ function render({ model, el }) {
     var cohort2_shortname = model.get('_cohort2Shortname');
 
     var cond_hier = model.get('_interestingConditions');
-    console.log('cond_hier', cond_hier);
+    // console.log('cond_hier', cond_hier);
 
     race_stats1 = renameKeys(race_stats1, ['race', 'race_count'], ['category', 'value']);
     ethnicity_stats1 = renameKeys(ethnicity_stats1, ['ethnicity', 'ethnicity_count'], ['category', 'value']);
@@ -613,7 +615,7 @@ function render({ model, el }) {
 
         // Helper function to set state
         function setInternalState(state) {
-            console.log("state", state);
+            // console.log("state", state);
             const availableWidth = getAvailableWidth();
 
             if (state === 'left-full') {
@@ -772,9 +774,12 @@ function render({ model, el }) {
         dragBarElement.addEventListener('pointercancel', onPointerCancel);
         dragBarElement.addEventListener('dblclick', onDoubleClick);
 
-        dispatch.on('set-state', (state) => {
-            console.log('handling state change. state = ', state);
-            setInternalState(state);
+        conceptsTableDispatcher.on('select-row', (rowData, isSelected) => {
+            // console.log('handling state change. state = ', isSelected ? 'split' : 'left-full');
+            setInternalState(isSelected ? 'split' : 'left-full');
+            if(!isSelected){
+                concepts_parents_row.innerHTML = '';
+            }
         });
 
         // Initialize panel state based on initialRightPanelOpen
@@ -1263,12 +1268,12 @@ function render({ model, el }) {
 
     /**
      * Renders a collapsible hierarchical table as SVG using D3
-     * @param {Object|Array} tree - Hierarchical data (single object or array of root nodes)
+     * @param {Object|Array} data_tree - Hierarchical data (single object or array of root nodes)
      * @param {Array} columns - Column definitions
      * @param {string} container - Container node
      * @param {Object} options - Optional configuration
      */
-    function HierarchicalTable(tree, columns, container, options = {}) {
+    function HierarchicalTable(data_tree, columns, options = {}) {
         // Default options
         const config = {
             rowHeight: 30,
@@ -1279,7 +1284,6 @@ function render({ model, el }) {
             headerFontSize: 12,
             childrenField: 'children',
             textOffsetX: 10,
-
             // Colors
             backgroundColor: '#f0f0f0',
             alternateRowColor: '#f0f0f0',
@@ -1287,7 +1291,7 @@ function render({ model, el }) {
             headerTextColor: '#000000',
             textColor: '#333333',
             borderColor: '#ccc',
-            hoverColor: '#d0d0d0',
+            hoverColor: '#f5f5f5',
             expandIconColor: '#4CAF50',
             selectedBorderColor: '#4CAF50',
             callerNodeColor: '#f0ffff',
@@ -1296,21 +1300,11 @@ function render({ model, el }) {
         };
 
         // Extract caller node ID and root nodes from data
-        console.log('tree.caller_node_id = ', tree.caller_node_id);
-        console.log('tree.parents = ', tree.parents);
+        // console.log('data_tree.caller_node_id = ', data_tree.caller_node_id);
+        // console.log('data_tree.parents = ', data_tree.parents);
 
-        const callerNodeId = tree.caller_node_id;
-        const rootNodes = tree.parents;
-
-        // Handle container (DOM element or D3 selection)
-        let d3Container;
-        if (container && container.append) {
-            d3Container = container;
-        } else if (typeof container === 'string') {
-            d3Container = d3.select('#' + container);
-        } else {
-            d3Container = d3.select(container);
-        }
+        const callerNodeId = data_tree.caller_node_id;
+        const rootNodes = data_tree.parents;
 
         // Initialize expanded state on all nodes (collapsed by default)
         function initializeNodes(nodes) {
@@ -1325,7 +1319,7 @@ function render({ model, el }) {
             });
         }
 
-        // Helper: Get all visible rows from tree structure
+        // Helper: Get all visible rows from data_tree structure
         function getVisibleRows() {
             const visible = [];
 
@@ -1482,23 +1476,6 @@ function render({ model, el }) {
             });
         }
 
-        // Helper: Check if node has children (or could have children to fetch)
-        function hasChildren(node) {
-            // If there's a hasChildren property, use that
-            if (node.hasChildren !== undefined) {
-                return node.hasChildren;
-            }
-
-            // If there's a childCount property, use that
-            if (node.childCount !== undefined) {
-                return node.childCount > 0;
-            }
-
-            // Otherwise fall back to checking if children array exists and has items
-            const children = node[config.childrenField];
-            return children && Array.isArray(children) && children.length > 0;
-        }
-
         // Check if node is the caller node
         function isCallerNode(node) {
             if (!callerNodeId) return false;
@@ -1510,7 +1487,7 @@ function render({ model, el }) {
         // Draw rows
         function drawRows() {
             const visibleRows = getVisibleRows();
-            console.log('visibleRows = ', visibleRows);
+            // console.log('visibleRows = ', visibleRows);
 
             // Update SVG height
             const newHeight = config.headerHeight + (visibleRows.length * config.rowHeight);
@@ -1533,30 +1510,16 @@ function render({ model, el }) {
                 .attr('width', getTotalWidth())
                 .attr('height', config.rowHeight)
                 .attr('fill', d => {
-                    const isCaller = isCallerNode(d.node);
-                    return isCaller ? config.callerNodeColor : config.backgroundColor;
+                    return isCallerNode(d.node) ? config.callerNodeColor : config.backgroundColor;
                 })
                 .attr('stroke', config.borderColor)
                 .attr('stroke-width', 0.5)
-                .on('mouseenter', function() {
-                    d3.select(this).attr('fill', config.hoverColor);
+                .on('mouseenter', function(event, d) {
+                    d3.select(this).attr('fill', isCallerNode(d.node) ? config.callerNodeColor : config.hoverColor);
                 })
                 .on('mouseleave', function(event, d) {
-                    const nodeId = getNodeId(d.node);
-                    const isSelected = selectedRows.has(nodeId);
-                    const isCaller = isCallerNode(d.node);
-
-                    if (isSelected) {
-                        d3.select(this).attr('fill', config.hoverColor);
-                    } else if (isCaller) {
-                        d3.select(this).attr('fill', config.callerNodeColor);
-                    } else {
-                        d3.select(this).attr('fill', config.backgroundColor);
-                    }
+                    d3.select(this).attr('fill', isCallerNode(d.node) ? config.callerNodeColor : config.backgroundColor)
                 })
-                .on('click', function(event, d) {
-                    handleRowClick(d, d3.select(this.parentNode));
-                });
 
             // Data cells (draw these before icons so icons are on top)
             rowGroups.each(function(d) {
@@ -1609,7 +1572,7 @@ function render({ model, el }) {
                 const g = d3.select(this);
                 const iconX = d.level * config.indentWidth + 10;
 
-                if (hasChildren(d.node)) {
+                if (d.node.hasChildren) {
                     // Clickable expand/collapse icon
                     const iconGroup = g.append('g')
                         .style('cursor', 'pointer')
@@ -1679,48 +1642,6 @@ function render({ model, el }) {
             return node.concept_id;
         }
 
-        // Handle row click (selection)
-        function handleRowClick(rowData, rowGroup) {
-            const nodeId = getNodeId(rowData);
-            const isCaller = isCallerNode(rowData);
-
-            if (selectedRows.has(nodeId)) {
-                // Deselect
-                selectedRows.delete(nodeId);
-                rowGroup.select('rect').attr('fill', isCaller ? config.callerNodeColor : config.backgroundColor);
-                rowGroup.select('.row-border').remove();
-            } else {
-                // Clear previous selections
-                selectedRows.clear();
-                svg.selectAll('.data-row rect:first-of-type').each(function(d) {
-                    const isCallerRow = isCallerNode(d.node);
-                    d3.select(this).attr('fill', isCallerRow ? config.callerNodeColor : config.backgroundColor);
-                });
-                svg.selectAll('.row-border').remove();
-
-                // Select this row
-                selectedRows.add(nodeId);
-                rowGroup.select('rect').attr('fill', config.hoverColor);
-
-                // Add selection border
-                rowGroup.append('rect')
-                    .attr('class', 'row-border')
-                    .attr('x', 0)
-                    .attr('y', 0)
-                    .attr('width', getTotalWidth())
-                    .attr('height', config.rowHeight)
-                    .attr('fill', 'none')
-                    .attr('stroke', config.selectedBorderColor)
-                    .attr('stroke-width', 2)
-                    .style('pointer-events', 'none');
-            }
-
-            // Optional: Call callback if provided
-            if (config.onRowSelect) {
-                config.onRowSelect(rowData.node, selectedRows.has(nodeId));
-            }
-        }
-
         // Recursively collapse all descendants
         function collapseAllDescendants(node) {
             const children = node[config.childrenField];
@@ -1732,34 +1653,29 @@ function render({ model, el }) {
             }
         }
 
-        if (d3Container.empty()) {
-            console.error('Container not found or empty');
-            return;
-        }
-
-        if (rootNodes.length === 0) {
-            d3Container.html('<p style="padding: 20px; color: #999;">No data to display</p>');
-            return;
-        }
-
-        initializeNodes(rootNodes);
-        calculateColumnPositions();
-
         // Create SVG
-        d3Container.html('');
-        const svg = d3Container
-            .append('svg')
-            .attr('width', getTotalWidth())
-            .attr('height', config.headerHeight)
-            .style('font-family', 'Arial, sans-serif')
-            .style('font-size', config.fontSize + 'px');
+        const svg = d3.create("svg");
+        if (rootNodes.length === 0) {
+            svg.append('h1')
+                .style("padding", 20)
+                .style("color", "#999")
+                .text('No parents to display')
+        }
+        else {
+            svg.attr('width', getTotalWidth())
+                .attr('height', config.headerHeight)
+                .style('font-family', 'Arial, sans-serif')
+                .style('font-size', config.fontSize + 'px');
 
-        // Track selected rows
-        let selectedRows = new Set();
+            // Track selected rows
+            let selectedRows = new Set();
 
-        // Initial draw
-        drawHeader();
-        drawRows();
+            initializeNodes(rootNodes);
+            calculateColumnPositions();
+            // Initial draw
+            drawHeader();
+            drawRows();
+        }
 
         // Return the SVG node for D3 integration
         return svg.node();
@@ -2020,7 +1936,7 @@ function render({ model, el }) {
             throw new Error("ConceptsTable: table_data is empty.");
         }
 
-        console.log('headers_text = ', headers_text);
+        // console.log('headers_text = ', headers_text);
 
         let columns_data;
         if(isSingleCohort()){
@@ -2051,7 +1967,7 @@ function render({ model, el }) {
 
         const total_table_width = d3.sum(columns_data, d => d.width);
 
-        console.log('columns_data', columns_data);
+        // console.log('columns_data', columns_data);
 
         const headers_svg = table_wrapper.append("svg")
             .attr("width", total_table_width)
@@ -2488,7 +2404,6 @@ function render({ model, el }) {
                                         .attr("height", innerH)
                                         .attr("fill", diff_val < 0 ? color(shortnames[1]) : color(shortnames[0]))
                                         .on("mouseover", function (event, d) {
-                                            console.log('d = ', d)
                                             const highest_prevalence = getHighestPrevalenceSeriesName(d);
                                             let highest_series_name = "";
                                             if(highest_prevalence >= 0)
@@ -2568,14 +2483,14 @@ function render({ model, el }) {
                     .text('No data to display.');
             }
 
-            console.log(`Row ${isSelected ? 'selected' : 'deselected'}:`, rowData);
+            // console.log(`Row ${isSelected ? 'selected' : 'deselected'}:`, rowData);
 
             // Cancel any pending requests when selection changes
             requestManager.cancelAll();
             // Clear the right panel
             d3.select(concepts_parents_row.node()).selectAll('*').remove();
             // Open or close the right panel depending on selection state
-            conceptsDragbarDispatcher.call('set-state', null, isSelected ? 'split' : 'left-full');
+            dispatch.call("select-row", this, rowData, isSelected);
 
             if (!isSelected) {
                 showNoDataMessage();
@@ -2600,7 +2515,7 @@ function render({ model, el }) {
                 console.log("Received parents data:", parentData);
 
                 // Update the table with the data
-                updateParentsTable(parentData);
+                drawParentsTable(parentData);
 
             } catch (error) {
                 if (error.message === 'Request cancelled') {
@@ -2623,7 +2538,7 @@ function render({ model, el }) {
             }
         }
 
-        function updateParentsTable(parentsData) {
+        function drawParentsTable(parentsData) {
             // Your logic to populate the new table with parents and children
             // For example:
             // const { parents, children } = relatedData;
@@ -2641,17 +2556,10 @@ function render({ model, el }) {
             // TODO: use columns here
 
             // Update table with parents
-            concept_hier_table_col.innerHTML = ''; // clear any existing table
-            let parents_row = concept_hier_table_col.append('div').attr('class', 'row-container');
-            // let parents_col = parents_row.append('div').attr('class', 'col-container');
-            // concept_hier_table_col.append('h1').text('Parent Nodes');
-            HierarchicalTable(parentsData, columns, parents_row);
-
-            // Update table with children
-            // let children_row = concept_hier_table_col.append('div').attr('class', 'row-container');
-            // concept_hier_table_col.append('h1').text('Child Nodes');
-            // let children_col = children_row.append('div').attr('class', 'col-container');
-            // HierarchicalTable(rowData['children'], columns, children_row);
+            if(concepts_parents_row) {
+                clearElement(concepts_parents_row);
+                concepts_parents_row.append(() => HierarchicalTable(parentsData, columns));
+            }
         }
 
         function updateTableBody() {
