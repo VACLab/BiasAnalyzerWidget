@@ -79,12 +79,12 @@ class CohortViewer(anywidget.AnyWidget):
     @t.observe('request')
     def _handle_request(self, change):
         """Handle incoming requests from JavaScript"""
-        self.log(f'def _handle_request(self, change): {change}')
+        # self.log(f'def _handle_request(self, change): {change}')
         if not change['new']:
             return
 
         try:
-            self.log(f'try to request data')
+            # self.log(f'try to request data')
             request_data = json.loads(change['new'])
             request_id = request_data.get('id')
             request_type = request_data.get('type')
@@ -101,10 +101,10 @@ class CohortViewer(anywidget.AnyWidget):
                 'success': True
             }
             self.response = json.dumps(response_data)
-            self.log_format_tree(f'response = {self.response}')
+            # self.log_format_tree(f'response = {self.response}')
 
         except Exception as e:
-            self.log(f'error: {e}')
+            # self.log(f'error: {e}')
             # Send error response
             response_data = {
                 'id': request_data.get('id'),
@@ -115,13 +115,13 @@ class CohortViewer(anywidget.AnyWidget):
             self.response = json.dumps(response_data)
 
     def _process_request(self, request_type, params):
-        self.log(f'processing request')
+        # self.log(f'processing request')
         """Route requests to appropriate handlers"""
         if request_type == 'get_parent_nodes':
             return self._get_parent_nodes(params)
         # ... other handlers
         else:
-            self.log(f'Raised ValueError: "Unknown request type: {request_type}"')
+            # self.log(f'Raised ValueError: "Unknown request type: {request_type}"')
             raise ValueError(f"Unknown request type: {request_type}")
 
     # def _get_parent_nodes(self, params):
@@ -142,7 +142,7 @@ class CohortViewer(anywidget.AnyWidget):
 
     def _get_parent_nodes(self, params):
         """Get parents with first 2 levels of children only"""
-        self.log(f'params: {params}')
+        # self.log(f'params: {params}')
         node_id = params.get('node_id')
         parent_ids = params.get('parent_ids')
 
@@ -203,7 +203,7 @@ class CohortViewer(anywidget.AnyWidget):
     ):
 
         super().__init__()
-        self.log_file = open('./debug.log', 'a', buffering=1)  # Line buffered
+        # self.log_file = open('./debug.log', 'a', buffering=1)  # Line buffered
 
         # READ PARAMETERS
 

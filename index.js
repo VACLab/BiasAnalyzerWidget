@@ -1503,23 +1503,26 @@ function render({ model, el }) {
                 .append('g')
                 .attr('class', 'data-row')
                 .attr('transform', (d, i) => `translate(0, ${config.headerHeight + i * config.rowHeight})`)
-                .style('cursor', 'pointer');
+                .style('cursor', 'pointer')
+                .on('mouseenter', function(event, d) {
+                    d3.select(this).select('rect.row-background')
+                        .attr('fill', isCallerNode(d.node) ? config.callerNodeColor : config.hoverColor);
+                })
+                .on('mouseleave', function(event, d) {
+                    d3.select(this).select('rect.row-background')
+                        .attr('fill', isCallerNode(d.node) ? config.callerNodeColor : config.backgroundColor);
+                });
 
             // Row backgrounds
             rowGroups.append('rect')
+                .attr('class', 'row-background')
                 .attr('width', getTotalWidth())
                 .attr('height', config.rowHeight)
                 .attr('fill', d => {
                     return isCallerNode(d.node) ? config.callerNodeColor : config.backgroundColor;
                 })
                 .attr('stroke', config.borderColor)
-                .attr('stroke-width', 0.5)
-                .on('mouseenter', function(event, d) {
-                    d3.select(this).attr('fill', isCallerNode(d.node) ? config.callerNodeColor : config.hoverColor);
-                })
-                .on('mouseleave', function(event, d) {
-                    d3.select(this).attr('fill', isCallerNode(d.node) ? config.callerNodeColor : config.backgroundColor)
-                })
+                .attr('stroke-width', 0.5);
 
             // Data cells (draw these before icons so icons are on top)
             rowGroups.each(function(d) {
@@ -1706,9 +1709,9 @@ function render({ model, el }) {
         // TODO: Show counts as fractions of total for each series (check that series 2 exists as well)
         function getTooltipContent(d, series_name){
             const heading = `<strong>Concept: ${d.concept_code}</strong><br>(${d.concept_name})<hr>`;
-            let msg = ` (no difference)`;
+            let msg = `(no difference)`;
             if(series_name !== "")
-                msg = `${d} (higher in ${series_name})`;
+                msg = `(higher in ${series_name})`;
             return `${heading} Diff. in Prev: ${Math.abs(d.difference_in_prevalence).toFixed(prevalence_dp)}<br>${msg}`;
         }
 
@@ -2223,6 +2226,8 @@ function render({ model, el }) {
         function renderTableCells(row) {
             const dafault_prevalence = 0;
 
+            console.log('renderTableCells row data', row.d);
+
             // Add click handler to the row group
             row.attr("cursor", "pointer")
                 .on("click", function(event, d) {
@@ -2312,6 +2317,8 @@ function render({ model, el }) {
                 } else {
 
                     function getHighestPrevalenceSeriesName(d) {
+                        console.log('d.cohort1_prevalence', d.cohort1_prevalence);
+                        console.log('d.cohort2_prevalence', d.cohort2_prevalence);
                         if (d.cohort1_prevalence > d.cohort2_prevalence) return 0;
                         if (d.cohort1_prevalence < d.cohort2_prevalence) return 1;
                         return 0;
@@ -2564,6 +2571,8 @@ function render({ model, el }) {
 
         function updateTableBody() {
             const page_data = getCurrentPageData();
+
+            console.log('page_data = ', page_data)
 
             const rows = rows_g.selectAll(".row")
                 .data(page_data, d => d.concept_code);
