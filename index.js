@@ -279,7 +279,7 @@ function render({ model, el }) {
     const conceptsTableDispatcher =
         d3.dispatch('select-row', 'filter', 'sort', 'change-dp', 'column-resize', 'view-pct');
     // handles the hierarchy table
-    const hierarchyTableDispatcher = d3.dispatch('filter', 'sort', 'change-dp', 'column-resize', 'view-pct');
+    const hierarchyTableDispatcher = d3.dispatch('get-children', 'filter', 'sort', 'change-dp', 'column-resize', 'view-pct');
     // handles all tooltips
     const tooltipDispatcher = d3.dispatch("show", "hide");
     // handles conditions drag bar
@@ -1266,13 +1266,6 @@ function render({ model, el }) {
 
     // <editor-fold desc="---------- HIERARCHICAL TABLE FUNCTIONS ----------">
 
-    /**
-     * Renders a collapsible hierarchical table as SVG using D3
-     * @param {Object|Array} data_tree - Hierarchical data (single object or array of root nodes)
-     * @param {Array} columns - Column definitions
-     * @param {string} container - Container node
-     * @param {Object} options - Optional configuration
-     */
     function HierarchicalTable(data_tree, columns, options = {}) {
         // Default options
         const config = {
@@ -1300,9 +1293,6 @@ function render({ model, el }) {
         };
 
         // Extract caller node ID and root nodes from data
-        // console.log('data_tree.caller_node_id = ', data_tree.caller_node_id);
-        // console.log('data_tree.parents = ', data_tree.parents);
-
         const callerNodeId = data_tree.caller_node_id;
         const rootNodes = data_tree.parents;
 
@@ -1317,6 +1307,50 @@ function render({ model, el }) {
                     initializeNodes(children);
                 }
             });
+        }
+
+        // Build node index for fast lookups
+        const nodeIndex = new Map();
+
+        function buildIndex(nodes) {
+            for (const node of nodes) {
+                const id = node.concept_id;
+                if (!nodeIndex.has(id)) {
+                    nodeIndex.set(id, []);
+                }
+                nodeIndex.get(id).push(node);
+
+                const children = node[config.childrenField];
+                if (children && Array.isArray(children) && children.length > 0) {
+                    buildIndex(children);
+                }
+            }
+        }
+
+        buildIndex(rootNodes);
+
+        // Fast lookup function
+        function findNodesById(nodeId) {
+            return nodeIndex.get(nodeId) || [];
+        }
+
+        // Update addChildrenToNode to use index
+        function addChildrenToNode(nodeId, fetchedChildren) {
+            const nodes = findNodesById(nodeId);  // O(1) lookup!
+            console.log('parent nodes = ', nodes);
+
+            nodes.forEach(node => {
+                if (fetchedChildren && Array.isArray(fetchedChildren)) {
+                    node[config.childrenField] = fetchedChildren;
+                    initializeNodes(fetchedChildren);
+
+                    // Add new children to index
+                    buildIndex(fetchedChildren);
+                }
+                node._expanded = true;
+            });
+
+            drawRows();
         }
 
         // Helper: Get all visible rows from data_tree structure
@@ -1480,14 +1514,28 @@ function render({ model, el }) {
         function isCallerNode(node) {
             if (!callerNodeId) return false;
             const matches = node.concept_id === callerNodeId;
-            console.log('Checking node concept_id:', node.concept_id, 'against caller:', callerNodeId, 'matches:', matches);
+            // console.log('Checking node concept_id:', node.concept_id, 'against caller:', callerNodeId, 'matches:', matches);
             return matches;
+        }
+
+        // Find a node by ID recursively
+        function findNode(nodes, targetId) {
+            for (const node of nodes) {
+                if (node.concept_id === targetId) {
+                    return node;
+                }
+                const children = node[config.childrenField];
+                if (children && Array.isArray(children)) {
+                    const found = findNode(children, targetId);
+                    if (found) return found;
+                }
+            }
+            return null;
         }
 
         // Draw rows
         function drawRows() {
             const visibleRows = getVisibleRows();
-            // console.log('visibleRows = ', visibleRows);
 
             // Update SVG height
             const newHeight = config.headerHeight + (visibleRows.length * config.rowHeight);
@@ -1570,7 +1618,6 @@ function render({ model, el }) {
                 });
             });
 
-            // Expand/collapse icons in first column (draw AFTER cells so they're on top)
             rowGroups.each(function(d) {
                 const g = d3.select(this);
                 const iconX = d.level * config.indentWidth + 10;
@@ -1580,30 +1627,28 @@ function render({ model, el }) {
                     const iconGroup = g.append('g')
                         .style('cursor', 'pointer')
                         .on('click', function(event) {
+                            event.stopPropagation();
+
+                            // If already expanded, just collapse
+                            if (d.node._expanded) {
+                                d.node._expanded = false;
+                                collapseAllDescendants(d.node);
+                                drawRows();
+                                return;
+                            }
+
                             // Check if we need to fetch children
                             const children = d.node[config.childrenField];
                             const needsFetch = !children || children.length === 0;
 
-                            if (needsFetch && config.onExpandUnfetched) {
-                                // Call callback to fetch children
-                                config.onExpandUnfetched(d.node, () => {
-                                    // After fetch completes, expand and redraw
-                                    d.node._expanded = true;
-                                    drawRows();
-                                });
+                            if (needsFetch) {
+                                // Dispatch event to fetch children (3 layers deep)
+                                hierarchyTableDispatcher.call('get-children', this, d.node, 3);
                             } else {
-                                // Toggle expanded state directly on the node
-                                d.node._expanded = !d.node._expanded;
-
-                                // If collapsing, collapse all descendants
-                                if (!d.node._expanded) {
-                                    collapseAllDescendants(d.node);
-                                }
-
+                                // Has children already, just expand
+                                d.node._expanded = true;
                                 drawRows();
                             }
-
-                            event.stopPropagation();
                         });
 
                     iconGroup.append('text')
@@ -1639,12 +1684,6 @@ function render({ model, el }) {
             });
         }
 
-        // Get ID for a node
-        function getNodeId(node) {
-            // console.log('node.conceptid', node.concept_id)
-            return node.concept_id;
-        }
-
         // Recursively collapse all descendants
         function collapseAllDescendants(node) {
             const children = node[config.childrenField];
@@ -1656,22 +1695,44 @@ function render({ model, el }) {
             }
         }
 
+        hierarchyTableDispatcher.on('get-children', async function(node, depth) {
+            try {
+                // Request children data from Python
+                const data = await requestManager.request(
+                    'get_child_nodes',
+                    {
+                        node_id: node.concept_id,
+                        depth: depth
+                    },
+                    {
+                        statusMessage: `Fetching children for ${node.concept_id}...`,
+                        showProgress: true
+                    }
+                );
+
+                console.log('new child nodes = ', data);
+                // Add the fetched children to the node
+                addChildrenToNode(node.concept_id, data);
+
+            } catch (error) {
+                console.error('Failed to fetch children:', error);
+            }
+        });
+
         // Create SVG
         const svg = d3.create("svg");
         if (rootNodes.length === 0) {
-            svg.append('h1')
-                .style("padding", 20)
+            svg.append('text')
+                .attr('x', 20)
+                .attr('y', 40)
                 .style("color", "#999")
-                .text('No parents to display')
+                .text('No parents to display');
         }
         else {
             svg.attr('width', getTotalWidth())
                 .attr('height', config.headerHeight)
                 .style('font-family', 'Arial, sans-serif')
                 .style('font-size', config.fontSize + 'px');
-
-            // Track selected rows
-            let selectedRows = new Set();
 
             initializeNodes(rootNodes);
             calculateColumnPositions();
@@ -1680,7 +1741,6 @@ function render({ model, el }) {
             drawRows();
         }
 
-        // Return the SVG node for D3 integration
         return svg.node();
     }
 
@@ -2506,7 +2566,7 @@ function render({ model, el }) {
 
             // Fetch parent nodes with progress indicator
             try {
-                const parentData = await requestManager.request(
+                const parentsData = await requestManager.request(
                     "get_parent_nodes",
                     {
                         node_id: rowData.concept_id,
@@ -2519,10 +2579,10 @@ function render({ model, el }) {
                     }
                 );
 
-                console.log("Received parents data:", parentData);
+                console.log("Received parents data:", parentsData);
 
                 // Update the table with the data
-                drawParentsTable(parentData);
+                drawParentsTable(parentsData);
 
             } catch (error) {
                 if (error.message === 'Request cancelled') {
@@ -2565,7 +2625,8 @@ function render({ model, el }) {
             // Update table with parents
             if(concepts_parents_row) {
                 clearElement(concepts_parents_row);
-                concepts_parents_row.append(() => HierarchicalTable(parentsData, columns));
+                const table = HierarchicalTable(parentsData, columns, options);
+                concepts_parents_row.append(() => table);
             }
         }
 
