@@ -393,8 +393,12 @@ function render({ model, el }) {
         return aDate.toISOString().split('T')[0];
     }
 
-    function getType(obj) {
-        return Object.prototype.toString.call(obj).slice(8, -1);
+    function logObjectType(label, obj) {
+        console.log(label + ' Object:', obj);
+        console.log(label + ' Constructor:', obj.constructor.name);
+        console.log(label + ' Keys:', Object.keys(obj));
+        console.log(label + ' Type of keys:', Object.keys(obj).map(k => `${k}: ${typeof obj[k]}`));
+        console.log(label + 'Type', Object.prototype.toString.call(obj).slice(8, -1));
     }
 
     function isNullOrEmpty(value) {
@@ -1265,14 +1269,13 @@ function render({ model, el }) {
     // </editor-fold>
 
     // <editor-fold desc="---------- HIERARCHICAL TABLE FUNCTIONS ----------">
-
     function HierarchicalTable(data_tree, columns, options = {}) {
         // Default options
         const config = {
             rowHeight: 30,
             headerHeight: 30,
             indentWidth: 20,
-            iconWidth: 30,
+            iconWidth: 20,  // Width of the expand/collapse icon itself
             fontSize: 12,
             headerFontSize: 12,
             childrenField: 'children',
@@ -1338,14 +1341,16 @@ function render({ model, el }) {
         function addChildrenToNode(nodeId, fetchedChildren) {
             const nodes = findNodesById(nodeId);  // O(1) lookup!
             console.log('parent nodes = ', nodes);
+            console.log('config.childrenField = ', config.childrenField);
 
             nodes.forEach(node => {
-                if (fetchedChildren && Array.isArray(fetchedChildren)) {
+                if (fetchedChildren){  // && Array.isArray(fetchedChildren)) {
+                    logObjectType('fetchedChildren = ', fetchedChildren.children);
                     node[config.childrenField] = fetchedChildren;
-                    initializeNodes(fetchedChildren);
+                    initializeNodes(fetchedChildren['children']);
 
                     // Add new children to index
-                    buildIndex(fetchedChildren);
+                    buildIndex(fetchedChildren['children']);
                 }
                 node._expanded = true;
             });
@@ -1417,9 +1422,9 @@ function render({ model, el }) {
             return String(value);
         }
 
-        // Calculate column positions
+        // Calculate column positions - no separate icon column
         function calculateColumnPositions() {
-            let xOffset = config.iconWidth;
+            let xOffset = 0;
             columns.forEach(col => {
                 col.x = xOffset;
                 if (!col.width) col.width = 150;
@@ -1429,7 +1434,7 @@ function render({ model, el }) {
 
         // Calculate total width
         function getTotalWidth() {
-            return config.iconWidth + columns.reduce((sum, col) => sum + col.width, 0);
+            return columns.reduce((sum, col) => sum + col.width, 0);
         }
 
         // Draw header
@@ -1439,15 +1444,7 @@ function render({ model, el }) {
             const header = svg.append('g')
                 .attr('class', 'header');
 
-            // Icon column header background
-            header.append('rect')
-                .attr('width', config.iconWidth)
-                .attr('height', config.headerHeight)
-                .attr('fill', config.headerColor)
-                .attr('stroke', '#fff')
-                .attr('stroke-width', 1);
-
-            // Data column headers
+            // Data column headers (no separate icon column)
             columns.forEach((col, colIndex) => {
                 const headerGroup = header.append('g')
                     .attr('class', 'header-group')
@@ -1536,6 +1533,10 @@ function render({ model, el }) {
         // Draw rows
         function drawRows() {
             const visibleRows = getVisibleRows();
+            console.log('visibleRows', visibleRows);
+
+
+            console.log('here 1');
 
             // Update SVG height
             const newHeight = config.headerHeight + (visibleRows.length * config.rowHeight);
@@ -1543,6 +1544,8 @@ function render({ model, el }) {
 
             // Remove old rows
             svg.selectAll('.data-row').remove();
+
+            console.log('here 2');
 
             // Draw visible rows
             const rowGroups = svg.selectAll('.data-row')
@@ -1560,6 +1563,9 @@ function render({ model, el }) {
                     d3.select(this).select('rect.row-background')
                         .attr('fill', isCallerNode(d.node) ? config.callerNodeColor : config.backgroundColor);
                 });
+
+
+            console.log('here 3');
 
             // Row backgrounds
             rowGroups.append('rect')
@@ -1593,10 +1599,13 @@ function render({ model, el }) {
                     let textX = col.x + config.textOffsetX;
                     let textAnchor = 'start';
 
+
+                    console.log('here 5');
+
                     // For first column, add extra offset for indent and icon
                     if (colIndex === 0) {
-                        const extraIndent = d.level * config.indentWidth + 20;
-                        textX = col.x + extraIndent;
+                        const indentAndIcon = d.level * config.indentWidth + config.iconWidth + 5;
+                        textX = col.x + indentAndIcon;
                     }
 
                     if (align === 'right') {
@@ -1618,9 +1627,10 @@ function render({ model, el }) {
                 });
             });
 
+            // Draw icons/bullets in the first column
             rowGroups.each(function(d) {
                 const g = d3.select(this);
-                const iconX = d.level * config.indentWidth + 10;
+                const iconX = d.level * config.indentWidth + 5;
 
                 if (d.node.hasChildren) {
                     // Clickable expand/collapse icon
@@ -1662,7 +1672,7 @@ function render({ model, el }) {
                 } else {
                     // Leaf node bullet
                     g.append('circle')
-                        .attr('cx', iconX + 5)
+                        .attr('cx', iconX + 4)
                         .attr('cy', config.rowHeight / 2)
                         .attr('r', 3)
                         .attr('fill', config.expandIconColor);
@@ -1937,7 +1947,6 @@ function render({ model, el }) {
         // </editor-fold>
 
         // ==== Validation for required params ====
-        // console.log('data type = ', getType(data))
         if (!dataEntityExists(data)) {
             throw new Error("ConceptsTable requires at least one cohort.");
         }

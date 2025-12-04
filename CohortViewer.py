@@ -119,26 +119,30 @@ class CohortViewer(anywidget.AnyWidget):
         """Route requests to appropriate handlers"""
         if request_type == 'get_parent_nodes':
             return self._get_parent_nodes(params)
+        if request_type == 'get_child_nodes':
+            return self._get_child_nodes(params)
         # ... other handlers
         else:
             # self.log(f'Raised ValueError: "Unknown request type: {request_type}"')
             raise ValueError(f"Unknown request type: {request_type}")
 
-    # def _get_parent_nodes(self, params):
-    #
-    #     """Get parents of a node"""
-    #     node_id = params.get('node_id')
-    #     parent_ids = params.get('parent_ids')
-    #
-    #     # self.log_object_type('_get_parent_nodes', self._conditionsHierarchy)
-    #     # self.log_object_type('_get_parent_nodes - parent_ids', parent_ids)
-    #
-    #     result = {'parents': []}  # Initialize with 'parents' key as a list
-    #     for parent_id in parent_ids:
-    #         parent_node = self._conditionsHierarchy.get_node(parent_id)
-    #         result['parents'].append(parent_node.to_dict())
-    #     self.log_object_type('_get_parent_nodes - result: ', result)
-    #     return result
+    def _get_child_nodes(self, params):
+        """Get list of children with first 2 levels of children only"""
+        # self.log(f'params: {params}')
+        node_id = params.get('node_id')
+        result = {'caller_node_id': node_id, 'children': []}
+        node = self._conditionsHierarchy.get_node(node_id)
+
+        # self.log(f'node.children: {node.children}')
+        for child_node in node.children:
+            # self.log(f'child_node: {child_node}')
+            child_dict = child_node.to_dict()
+            pruned_child = self._prune_tree(child_dict, max_depth=2)
+            # self.log(f'pruned_child: ', pruned_child)
+            result['children'].append(pruned_child)
+
+        # self.log(f'result: {result}')
+        return result
 
     def _get_parent_nodes(self, params):
         """Get parents with first 2 levels of children only"""
