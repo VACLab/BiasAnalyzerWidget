@@ -782,7 +782,7 @@ function render({ model, el }) {
             // console.log('handling state change. state = ', isSelected ? 'split' : 'left-full');
             setInternalState(isSelected ? 'split' : 'left-full');
             if(!isSelected){
-                concepts_parents_row.innerHTML = '';
+                concept_hier_col.innerHTML = '';
             }
         });
 
@@ -1269,487 +1269,182 @@ function render({ model, el }) {
     // </editor-fold>
 
     // <editor-fold desc="---------- HIERARCHICAL TABLE FUNCTIONS ----------">
-    function HierarchicalTable(data_tree, columns, options = {}) {
-        // Default options
-        const config = {
-            rowHeight: 30,
-            headerHeight: 30,
-            indentWidth: 20,
-            iconWidth: 20,  // Width of the expand/collapse icon itself
-            fontSize: 12,
-            headerFontSize: 12,
-            childrenField: 'children',
-            textOffsetX: 10,
-            // Colors
-            backgroundColor: '#f0f0f0',
-            alternateRowColor: '#f0f0f0',
-            headerColor: '#d0d0d0',
-            headerTextColor: '#000000',
-            textColor: '#333333',
-            borderColor: '#ccc',
-            hoverColor: '#f5f5f5',
-            expandIconColor: '#4CAF50',
-            selectedBorderColor: '#4CAF50',
-            callerNodeColor: '#f0ffff',
-            callerNodeBorderColor: '#f0f0f0',
-            ...options
-        };
 
-        // Extract caller node ID and root nodes from data
-        const callerNodeId = data_tree.caller_node_id;
-        const rootNodes = data_tree.parents;
+    function DashboardSVG(data, { width = 960, height = 720 } = {}) {
+        console.log('DashboardSVG data = ', data);
 
-        // Initialize expanded state on all nodes (collapsed by default)
-        function initializeNodes(nodes) {
-            nodes.forEach(node => {
-                if (node._expanded === undefined) {
-                    node._expanded = false;
-                }
-                const children = node[config.childrenField];
-                if (children && Array.isArray(children) && children.length > 0) {
-                    initializeNodes(children);
-                }
-            });
-        }
+        // State to track which card is in the center
+        let centerCard = data.centerCard || null;
 
-        // Build node index for fast lookups
-        const nodeIndex = new Map();
+        // Create the SVG root
+        const svg = d3.create("svg")
+            .attr("viewBox", `0 0 ${width} ${height}`)
+            .attr("width", "100%")
+            .attr("height", height)
+            .attr("preserveAspectRatio", "xMidYMid meet")
+            .style("display", "block");
 
-        function buildIndex(nodes) {
-            for (const node of nodes) {
-                const id = node.concept_id;
-                if (!nodeIndex.has(id)) {
-                    nodeIndex.set(id, []);
-                }
-                nodeIndex.get(id).push(node);
+        // Define row heights
+        const H1 = 180;
+        const H2 = 360;
+        const H3 = height - H1 - H2;
+        const pad = 12;
 
-                const children = node[config.childrenField];
-                if (children && Array.isArray(children) && children.length > 0) {
-                    buildIndex(children);
-                }
-            }
-        }
+        // Sub-function to create an SVG card
+        function createCard(parentGroup, x, y, cardWidth, cardHeight, title, isDraggable = true) {
+            const card = parentGroup.append("g")
+                .attr("transform", `translate(${x},${y})`)
+                .attr("class", "card")
+                .style("cursor", isDraggable ? "grab" : "default");
 
-        buildIndex(rootNodes);
+            const rect = card.append("rect")
+                .attr("width", cardWidth)
+                .attr("height", cardHeight)
+                .attr("rx", 8)
+                .attr("fill", "#fff")
+                .attr("stroke", "#ddd")
+                .attr("stroke-width", 1);
 
-        // Fast lookup function
-        function findNodesById(nodeId) {
-            return nodeIndex.get(nodeId) || [];
-        }
+            card.append("text")
+                .attr("x", 16)
+                .attr("y", 32)
+                .attr("font-size", 14)
+                .attr("font-weight", 600)
+                .attr("fill", "#333")
+                .text(title);
 
-        // Update addChildrenToNode to use index
-        function addChildrenToNode(nodeId, fetchedChildren) {
-            const nodes = findNodesById(nodeId);  // O(1) lookup!
-            console.log('parent nodes = ', nodes);
-            console.log('config.childrenField = ', config.childrenField);
-
-            nodes.forEach(node => {
-                if (fetchedChildren){  // && Array.isArray(fetchedChildren)) {
-                    logObjectType('fetchedChildren = ', fetchedChildren.children);
-                    node[config.childrenField] = fetchedChildren;
-                    initializeNodes(fetchedChildren['children']);
-
-                    // Add new children to index
-                    buildIndex(fetchedChildren['children']);
-                }
-                node._expanded = true;
-            });
-
-            drawRows();
-        }
-
-        // Helper: Get all visible rows from data_tree structure
-        function getVisibleRows() {
-            const visible = [];
-
-            function traverse(nodes, level = 0) {
-                nodes.forEach(node => {
-                    // Add this node
-                    visible.push({
-                        node: node,
-                        level: level
-                    });
-
-                    // If expanded, add visible children
-                    if (node._expanded) {
-                        const children = node[config.childrenField];
-                        if (children && Array.isArray(children) && children.length > 0) {
-                            traverse(children, level + 1);
-                        }
-                    }
-                });
+            if (isDraggable) {
+                setupDragBehavior(card, title, rect, cardWidth, cardHeight);
             }
 
-            traverse(rootNodes);
-            return visible;
+            return card;
         }
 
-        // Helper: Get field value (supports nested fields)
-        function getFieldValue(obj, field) {
-            const parts = field.split('.');
-            let value = obj;
-            for (const part of parts) {
-                if (value && typeof value === 'object') {
-                    value = value[part];
-                } else {
-                    return undefined;
-                }
-            }
-            return value;
-        }
+        // Setup drag behavior for cards
+        function setupDragBehavior(card, cardTitle, rect, cardWidth, cardHeight) {
+            let startX, startY, originalTransform;
 
-        // Helper: Format value
-        function formatValue(value, column) {
-            if (value === undefined || value === null) return '';
+            const drag = d3.drag()
+                .on("start", function(event) {
+                    card.style("cursor", "grabbing");
+                    card.raise(); // Bring to front
+                    rect.attr("stroke", "#0d6efd").attr("stroke-width", 2);
 
-            if (column.formatter) {
-                return column.formatter(value);
-            }
-
-            if (column.type === 'percentage') {
-                return `${(value * 100).toFixed(column.decimals || 1)}%`;
-            }
-
-            if (column.type === 'number') {
-                return typeof value === 'number'
-                    ? value.toLocaleString(undefined, {
-                        minimumFractionDigits: column.decimals || 0,
-                        maximumFractionDigits: column.decimals || 0
-                    })
-                    : value;
-            }
-
-            return String(value);
-        }
-
-        // Calculate column positions - no separate icon column
-        function calculateColumnPositions() {
-            let xOffset = 0;
-            columns.forEach(col => {
-                col.x = xOffset;
-                if (!col.width) col.width = 150;
-                xOffset += col.width;
-            });
-        }
-
-        // Calculate total width
-        function getTotalWidth() {
-            return columns.reduce((sum, col) => sum + col.width, 0);
-        }
-
-        // Draw header
-        function drawHeader() {
-            svg.selectAll('.header').remove();
-
-            const header = svg.append('g')
-                .attr('class', 'header');
-
-            // Data column headers (no separate icon column)
-            columns.forEach((col, colIndex) => {
-                const headerGroup = header.append('g')
-                    .attr('class', 'header-group')
-                    .attr('transform', `translate(${col.x}, 0)`);
-
-                // Header background
-                headerGroup.append('rect')
-                    .attr('width', col.width)
-                    .attr('height', config.headerHeight)
-                    .attr('fill', config.headerColor)
-                    .attr('stroke', '#fff')
-                    .attr('stroke-width', 1);
-
-                // Header text
-                headerGroup.append('text')
-                    .attr('x', config.textOffsetX)
-                    .attr('y', config.headerHeight / 2)
-                    .attr('dy', '0.35em')
-                    .attr('fill', config.headerTextColor)
-                    .attr('font-size', config.headerFontSize)
-                    .text(col.label || col.field);
-
-                // Add resize handle
-                headerGroup.append('rect')
-                    .attr('class', 'resize-handle')
-                    .attr('x', col.width - 5)
-                    .attr('y', 0)
-                    .attr('width', 10)
-                    .attr('height', config.headerHeight)
-                    .style('cursor', 'col-resize')
-                    .style('fill', 'transparent')
-                    .call(d3.drag()
-                        .on('start', function(event) {
-                            col.startWidth = col.width;
-                            col.startX = event.x;
-                        })
-                        .on('drag', function(event) {
-                            const dx = event.x - col.startX;
-                            const newWidth = Math.max(30, col.startWidth + dx);
-                            col.width = newWidth;
-
-                            calculateColumnPositions();
-
-                            d3.select(this.parentNode).select('rect:first-of-type')
-                                .attr('width', newWidth);
-                            d3.select(this).attr('x', newWidth - 5);
-
-                            header.selectAll('.header-group')
-                                .attr('transform', (d, i) => `translate(${columns[i].x}, 0)`);
-
-                            svg.attr('width', getTotalWidth());
-
-                            drawRows();
-                        })
-                        .on('end', function() {
-                            delete col.startWidth;
-                            delete col.startX;
-                        })
-                    );
-            });
-        }
-
-        // Check if node is the caller node
-        function isCallerNode(node) {
-            if (!callerNodeId) return false;
-            const matches = node.concept_id === callerNodeId;
-            // console.log('Checking node concept_id:', node.concept_id, 'against caller:', callerNodeId, 'matches:', matches);
-            return matches;
-        }
-
-        // Find a node by ID recursively
-        function findNode(nodes, targetId) {
-            for (const node of nodes) {
-                if (node.concept_id === targetId) {
-                    return node;
-                }
-                const children = node[config.childrenField];
-                if (children && Array.isArray(children)) {
-                    const found = findNode(children, targetId);
-                    if (found) return found;
-                }
-            }
-            return null;
-        }
-
-        // Draw rows
-        function drawRows() {
-            const visibleRows = getVisibleRows();
-            console.log('visibleRows', visibleRows);
-
-
-            console.log('here 1');
-
-            // Update SVG height
-            const newHeight = config.headerHeight + (visibleRows.length * config.rowHeight);
-            svg.attr('height', newHeight);
-
-            // Remove old rows
-            svg.selectAll('.data-row').remove();
-
-            console.log('here 2');
-
-            // Draw visible rows
-            const rowGroups = svg.selectAll('.data-row')
-                .data(visibleRows)
-                .enter()
-                .append('g')
-                .attr('class', 'data-row')
-                .attr('transform', (d, i) => `translate(0, ${config.headerHeight + i * config.rowHeight})`)
-                .style('cursor', 'pointer')
-                .on('mouseenter', function(event, d) {
-                    d3.select(this).select('rect.row-background')
-                        .attr('fill', isCallerNode(d.node) ? config.callerNodeColor : config.hoverColor);
+                    const transform = d3.select(this).attr("transform");
+                    const match = transform.match(/translate\(([^,]+),([^)]+)\)/);
+                    startX = parseFloat(match[1]);
+                    startY = parseFloat(match[2]);
+                    originalTransform = transform;
                 })
-                .on('mouseleave', function(event, d) {
-                    d3.select(this).select('rect.row-background')
-                        .attr('fill', isCallerNode(d.node) ? config.callerNodeColor : config.backgroundColor);
-                });
-
-
-            console.log('here 3');
-
-            // Row backgrounds
-            rowGroups.append('rect')
-                .attr('class', 'row-background')
-                .attr('width', getTotalWidth())
-                .attr('height', config.rowHeight)
-                .attr('fill', d => {
-                    return isCallerNode(d.node) ? config.callerNodeColor : config.backgroundColor;
+                .on("drag", function(event) {
+                    const newX = startX + event.x;
+                    const newY = startY + event.y;
+                    d3.select(this).attr("transform", `translate(${newX},${newY})`);
                 })
-                .attr('stroke', config.borderColor)
-                .attr('stroke-width', 0.5);
+                .on("end", function(event) {
+                    card.style("cursor", "grab");
+                    rect.attr("stroke", "#ddd").attr("stroke-width", 1);
 
-            // Data cells (draw these before icons so icons are on top)
-            rowGroups.each(function(d) {
-                const g = d3.select(this);
+                    const finalX = startX + event.x;
+                    const finalY = startY + event.y;
 
-                columns.forEach((col, colIndex) => {
-                    const value = getFieldValue(d.node, col.field);
-                    const formattedValue = formatValue(value, col);
-                    const align = col.align || 'left';
+                    // Check if dropped in center area
+                    const midY = H1;
+                    const centerTop = midY + pad;
+                    const centerBottom = midY + H2;
 
-                    // Cell background
-                    g.append('rect')
-                        .attr('x', col.x)
-                        .attr('width', col.width)
-                        .attr('height', config.rowHeight)
-                        .attr('fill', 'transparent')
-                        .attr('stroke', config.borderColor)
-                        .attr('stroke-width', 0.5);
-
-                    let textX = col.x + config.textOffsetX;
-                    let textAnchor = 'start';
-
-
-                    console.log('here 5');
-
-                    // For first column, add extra offset for indent and icon
-                    if (colIndex === 0) {
-                        const indentAndIcon = d.level * config.indentWidth + config.iconWidth + 5;
-                        textX = col.x + indentAndIcon;
+                    if (finalY + cardHeight/2 >= centerTop && finalY + cardHeight/2 <= centerBottom) {
+                        // Dropped in center - update data and redraw
+                        centerCard = cardTitle;
+                        redrawDashboard();
+                    } else {
+                        // Not in center - return to original position
+                        d3.select(this)
+                            .transition()
+                            .duration(300)
+                            .attr("transform", originalTransform);
                     }
-
-                    if (align === 'right') {
-                        textX = col.x + col.width - config.textOffsetX;
-                        textAnchor = 'end';
-                    } else if (align === 'center') {
-                        textX = col.x + col.width / 2;
-                        textAnchor = 'middle';
-                    }
-
-                    g.append('text')
-                        .attr('x', textX)
-                        .attr('y', config.rowHeight / 2)
-                        .attr('dy', '0.35em')
-                        .attr('text-anchor', textAnchor)
-                        .attr('fill', config.textColor)
-                        .attr('font-size', config.fontSize)
-                        .text(formattedValue);
                 });
-            });
 
-            // Draw icons/bullets in the first column
-            rowGroups.each(function(d) {
-                const g = d3.select(this);
-                const iconX = d.level * config.indentWidth + 5;
+            card.call(drag);
+        }
 
-                if (d.node.hasChildren) {
-                    // Clickable expand/collapse icon
-                    const iconGroup = g.append('g')
-                        .style('cursor', 'pointer')
-                        .on('click', function(event) {
-                            event.stopPropagation();
+        // Function to redraw the entire dashboard
+        function redrawDashboard() {
+            // Clear all groups
+            svg.selectAll("g").remove();
 
-                            // If already expanded, just collapse
-                            if (d.node._expanded) {
-                                d.node._expanded = false;
-                                collapseAllDescendants(d.node);
-                                drawRows();
-                                return;
-                            }
+            // Filter out the center card from parents and children
+            const parents = (data.parents || []).filter(p => p !== centerCard);
+            const children = (data.children || []).filter(c => c !== centerCard);
 
-                            // Check if we need to fetch children
-                            const children = d.node[config.childrenField];
-                            const needsFetch = !children || children.length === 0;
+            // Redraw top group
+            const top = svg.append("g").attr("transform", `translate(${pad},${pad})`);
+            const parentCardPadding = 8;
+            const availableTopWidth = width - 2 * pad;
+            const parentCardHeight = H1 - pad;
+            layoutCardsInGrid(top, parents, availableTopWidth, parentCardHeight, parentCardPadding, true);
 
-                            if (needsFetch) {
-                                // Dispatch event to fetch children (3 layers deep)
-                                hierarchyTableDispatcher.call('get-children', this, d.node, 3);
-                            } else {
-                                // Has children already, just expand
-                                d.node._expanded = true;
-                                drawRows();
-                            }
-                        });
+            // Redraw middle group with center card
+            const midY = H1;
+            const mid = svg.append("g").attr("transform", `translate(${pad},${midY + pad})`);
 
-                    iconGroup.append('text')
-                        .attr('x', iconX)
-                        .attr('y', config.rowHeight / 2)
-                        .attr('dy', '0.35em')
-                        .attr('fill', config.expandIconColor)
-                        .attr('font-size', config.fontSize)
-                        .attr('font-weight', 'bold')
-                        .text(d.node._expanded ? '▼' : '▶');
-                } else {
-                    // Leaf node bullet
-                    g.append('circle')
-                        .attr('cx', iconX + 4)
-                        .attr('cy', config.rowHeight / 2)
-                        .attr('r', 3)
-                        .attr('fill', config.expandIconColor);
-                }
+            if (centerCard) {
+                const centerCardWidth = width - 2 * pad;
+                const centerCardHeight = H2 - pad;
+                createCard(mid, 0, 0, centerCardWidth, centerCardHeight, centerCard, false);
+            } else {
+                // Show empty drop zone
+                mid.append("rect")
+                    .attr("width", width - 2 * pad)
+                    .attr("height", H2 - pad)
+                    .attr("rx", 8)
+                    .attr("fill", "#f8f9fa")
+                    .attr("stroke", "#ddd")
+                    .attr("stroke-dasharray", "5,5");
 
-                // Add caller node indicator border if this is the caller node
-                if (isCallerNode(d.node)) {
-                    g.append('rect')
-                        .attr('class', 'caller-border')
-                        .attr('x', 0)
-                        .attr('y', 0)
-                        .attr('width', getTotalWidth())
-                        .attr('height', config.rowHeight)
-                        .attr('fill', 'none')
-                        .attr('stroke', config.callerNodeBorderColor)
-                        .attr('stroke-width', 2)
-                        .style('pointer-events', 'none');
-                }
+                mid.append("text")
+                    .attr("x", (width - 2 * pad) / 2)
+                    .attr("y", (H2 - pad) / 2)
+                    .attr("text-anchor", "middle")
+                    .attr("font-size", 16)
+                    .attr("fill", "#999")
+                    .text("Drop a card here");
+            }
+
+            // Redraw bottom group
+            const botY = H1 + H2;
+            const bottom = svg.append("g").attr("transform", `translate(${pad},${botY + pad})`);
+            const childCardPadding = 8;
+            const availableBottomWidth = width - 2 * pad;
+            const childCardHeight = H3 - pad;
+            layoutCardsInGrid(bottom, children, availableBottomWidth, childCardHeight, childCardPadding, true);
+        }
+
+        // Sub-function to layout cards in a grid (wrapping to new rows)
+        function layoutCardsInGrid(parentGroup, items, availableWidth, availableHeight, cardPadding, isDraggable = true) {
+            if (items.length === 0) return;
+
+            const minCardWidth = 150;
+            const minCardHeight = 80;
+            const cardsPerRow = Math.floor((availableWidth + cardPadding) / (minCardWidth + cardPadding));
+            const actualCardsPerRow = Math.max(1, Math.min(cardsPerRow, items.length));
+            const cardWidth = (availableWidth - (actualCardsPerRow - 1) * cardPadding) / actualCardsPerRow;
+
+            const numRows = Math.ceil(items.length / actualCardsPerRow);
+            const cardHeight = Math.max(minCardHeight, (availableHeight - (numRows - 1) * cardPadding) / numRows);
+
+            items.forEach((item, i) => {
+                const row = Math.floor(i / actualCardsPerRow);
+                const col = i % actualCardsPerRow;
+                const cardX = col * (cardWidth + cardPadding);
+                const cardY = row * (cardHeight + cardPadding);
+                createCard(parentGroup, cardX, cardY, cardWidth, cardHeight, item, isDraggable);
             });
         }
 
-        // Recursively collapse all descendants
-        function collapseAllDescendants(node) {
-            const children = node[config.childrenField];
-            if (children && Array.isArray(children)) {
-                children.forEach(child => {
-                    child._expanded = false;
-                    collapseAllDescendants(child);
-                });
-            }
-        }
-
-        hierarchyTableDispatcher.on('get-children', async function(node, depth) {
-            try {
-                // Request children data from Python
-                const data = await requestManager.request(
-                    'get_child_nodes',
-                    {
-                        node_id: node.concept_id,
-                        depth: depth
-                    },
-                    {
-                        statusMessage: `Fetching children for ${node.concept_id}...`,
-                        showProgress: true
-                    }
-                );
-
-                console.log('new child nodes = ', data);
-                // Add the fetched children to the node
-                addChildrenToNode(node.concept_id, data);
-
-            } catch (error) {
-                console.error('Failed to fetch children:', error);
-            }
-        });
-
-        // Create SVG
-        const svg = d3.create("svg");
-        if (rootNodes.length === 0) {
-            svg.append('text')
-                .attr('x', 20)
-                .attr('y', 40)
-                .style("color", "#999")
-                .text('No parents to display');
-        }
-        else {
-            svg.attr('width', getTotalWidth())
-                .attr('height', config.headerHeight)
-                .style('font-family', 'Arial, sans-serif')
-                .style('font-size', config.fontSize + 'px');
-
-            initializeNodes(rootNodes);
-            calculateColumnPositions();
-            // Initial draw
-            drawHeader();
-            drawRows();
-        }
+        // Initial draw
+        redrawDashboard();
 
         return svg.node();
     }
@@ -2551,7 +2246,7 @@ function render({ model, el }) {
 
             // Helper function to show default message
             function showNoDataMessage() {
-                d3.select(concepts_parents_row.node())
+                d3.select(concept_hier_col.node())
                     .append('p')
                     .style('padding', '8px')
                     .style('color', '#666')
@@ -2564,7 +2259,7 @@ function render({ model, el }) {
             // Cancel any pending requests when selection changes
             requestManager.cancelAll();
             // Clear the right panel
-            d3.select(concepts_parents_row.node()).selectAll('*').remove();
+            d3.select(concept_hier_col.node()).selectAll('*').remove();
             // Open or close the right panel depending on selection state
             dispatch.call("select-row", this, rowData, isSelected);
 
@@ -2574,42 +2269,144 @@ function render({ model, el }) {
             }
 
             // Fetch parent nodes with progress indicator
+            // try {
+            //     const parentsData = await requestManager.request(
+            //         "get_parent_nodes",
+            //         {
+            //             node_id: rowData.concept_id,
+            //             parent_ids: rowData.parent_ids
+            //         },
+            //         {
+            //             statusMessage: "Loading parent nodes...",
+            //             progressContainer: concepts_parents_row.node(),
+            //             showProgress: true
+            //         }
+            //     );
+            //
+            //     console.log("Received parents data:", parentsData);
+            //
+            //     // Update the table with the data
+            //     drawParentsTable(parentsData);
+            //
+            // } catch (error) {
+            //     if (error.message === 'Request cancelled') {
+            //         console.log('Parent nodes request was cancelled');
+            //         // Deselect the row when cancelled
+            //         // Show default message for cancelled requests
+            //         showNoDataMessage();
+            //     } else {
+            //         console.error("Error fetching parent nodes:", error);
+            //
+            //         // Show error message in the panel
+            //         d3.select(concepts_parents_row.node()).selectAll('*').remove();
+            //         d3.select(concepts_parents_row.node())
+            //             .append('p')
+            //             .style('padding', '8px')
+            //             .style('color', '#f44336')
+            //             .style('font-size', '12px')
+            //             .text(`Error: ${error.message || 'Failed to fetch parent nodes'}`);
+            //     }
+            // }
+
+            // Fetch parent nodes with progress indicator
             try {
-                const parentsData = await requestManager.request(
-                    "get_parent_nodes",
+                const immediate_nodes_data = await requestManager.request(
+                    "get_immediate_nodes",
                     {
                         node_id: rowData.concept_id,
                         parent_ids: rowData.parent_ids
                     },
                     {
-                        statusMessage: "Loading parent nodes...",
-                        progressContainer: concepts_parents_row.node(),
+                        statusMessage: "Loading parent and child nodes...",
+                        progressContainer: concept_hier_col.node(),
                         showProgress: true
                     }
                 );
 
-                console.log("Received parents data:", parentsData);
+                console.log("Received parent and child nodes data:", immediate_nodes_data);concept_hier_col.innerHTML = '';
 
-                // Update the table with the data
-                drawParentsTable(parentsData);
+                // TODO: Consolidate repeated code
+
+                concept_hier_col.innerHTML = '';
+
+                const concept_hier_wrapper = concept_hier_col.append('div')
+                    .style('height', '100%')
+                    .style('overflow', 'auto')
+                    .style('width', '100%')
+                    .style('flex', '1 1 0')
+                    .style('min-height', '0')
+                    .style('position', 'relative')
+                    .style('box-sizing', 'border-box');
+
+// Function to create/update the SVG
+                function updateDashboardSVG() {
+                    // Clear existing content
+                    concept_hier_wrapper.node().innerHTML = '';
+
+                    const concept_hier_rect_bounds = concept_hier_col.node().getBoundingClientRect();
+
+                    // Calculate SVG height based on number of cards
+                    const parents = immediate_nodes_data.parents || [];
+                    const children = immediate_nodes_data.children || [];
+
+                    const minCardWidth = 150;
+                    const cardPadding = 8;
+                    const availableWidth = concept_hier_rect_bounds.width - 24;
+
+                    const cardsPerRow = Math.floor((availableWidth + cardPadding) / (minCardWidth + cardPadding));
+                    const actualCardsPerRow = Math.max(1, cardsPerRow);
+
+                    const parentRows = Math.ceil(parents.length / actualCardsPerRow);
+                    const childRows = Math.ceil(children.length / actualCardsPerRow);
+
+                    const minCardHeight = 80;
+                    const topSectionHeight = 180;
+                    const middleSectionHeight = 360;
+                    const bottomSectionHeight = 180;
+
+                    const topHeight = Math.max(topSectionHeight, parentRows * (minCardHeight + cardPadding) + 24);
+                    const bottomHeight = Math.max(bottomSectionHeight, childRows * (minCardHeight + cardPadding) + 24);
+
+                    const svgHeight = topHeight + middleSectionHeight + bottomHeight;
+
+                    const svg_hier = DashboardSVG(immediate_nodes_data, {
+                        width: concept_hier_rect_bounds.width,
+                        height: svgHeight
+                    });
+                    concept_hier_wrapper.node().appendChild(svg_hier);
+                }
+
+// Initial draw
+                updateDashboardSVG();
+
+// Listen to drag events and redraw
+                conceptsDragbarDispatcher.on('drag.dashboard', () => {
+                    updateDashboardSVG();
+                });
+
+// Also listen to dragend for a final update
+                conceptsDragbarDispatcher.on('dragend.dashboard', () => {
+                    updateDashboardSVG();
+                });
 
             } catch (error) {
                 if (error.message === 'Request cancelled') {
-                    console.log('Parent nodes request was cancelled');
+                    console.log('Immediate nodes request was cancelled');
                     // Deselect the row when cancelled
                     // Show default message for cancelled requests
                     showNoDataMessage();
                 } else {
-                    console.error("Error fetching parent nodes:", error);
+                    console.error("Error fetching immediate nodes:", error);
 
+                    // TODO: use correct container
                     // Show error message in the panel
-                    d3.select(concepts_parents_row.node()).selectAll('*').remove();
-                    d3.select(concepts_parents_row.node())
+                    d3.select(concept_hier_col.node()).selectAll('*').remove();
+                    d3.select(concept_hier_col.node())
                         .append('p')
                         .style('padding', '8px')
                         .style('color', '#f44336')
                         .style('font-size', '12px')
-                        .text(`Error: ${error.message || 'Failed to fetch parent nodes'}`);
+                        .text(`Error: ${error.message || 'Failed to fetch immediate nodes'}`);
                 }
             }
         }
@@ -2631,12 +2428,56 @@ function render({ model, el }) {
 
             // TODO: use columns here
 
-            // Update table with parents
-            if(concepts_parents_row) {
-                clearElement(concepts_parents_row);
-                const table = HierarchicalTable(parentsData, columns, options);
-                concepts_parents_row.append(() => table);
-            }
+            // // Update table with parents
+            // if(concept_hier_col) {
+            //     clearElement(concept_hier_col);
+            //     // const table = HierarchicalTable(parentsData, columns, options);
+            //     const table = DashboardSVG(hier_data)
+            //     concept_hier_col.append(() => table);
+            // }
+
+            // TODO: Consolidate repeated code
+
+            const concept_hier_wrapper = concept_hier_col.append('div')
+                .style('height', '100%')
+                .style('overflow', 'auto')
+                .style('width', '100%')
+                .style('flex', '1 1 0')       // Override parent CSS
+                .style('min-height', '0')     // Critical for flex + scroll
+                .style('position', 'relative')
+                .style('box-sizing', 'border-box');
+
+            const concept_hier_rect_bounds = concept_hier_col.node().getBoundingClientRect();
+
+// Calculate SVG height based on number of cards
+            const parents = immediate_nodes_data.parents || [];
+            const children = immediate_nodes_data.children || [];
+
+            const minCardWidth = 150;
+            const cardPadding = 8;
+            const availableWidth = concept_hier_rect_bounds.width - 24;
+
+            const cardsPerRow = Math.floor((availableWidth + cardPadding) / (minCardWidth + cardPadding));
+            const actualCardsPerRow = Math.max(1, cardsPerRow);
+
+            const parentRows = Math.ceil(parents.length / actualCardsPerRow);
+            const childRows = Math.ceil(children.length / actualCardsPerRow);
+
+            const minCardHeight = 80;
+            const topSectionHeight = 180;
+            const middleSectionHeight = 360;
+            const bottomSectionHeight = 180;
+
+            const topHeight = Math.max(topSectionHeight, parentRows * (minCardHeight + cardPadding) + 24);
+            const bottomHeight = Math.max(bottomSectionHeight, childRows * (minCardHeight + cardPadding) + 24);
+
+            const svgHeight = topHeight + middleSectionHeight + bottomHeight;
+
+            const svg_hier = DashboardSVG(immediate_nodes_data, {
+                width: concept_hier_rect_bounds.width,
+                height: svgHeight
+            });
+            concept_hier_wrapper.node().appendChild(svg_hier);
         }
 
         function updateTableBody() {
@@ -2814,20 +2655,20 @@ function render({ model, el }) {
     const concepts_tables_row = concepts_col.append('div').attr('class', 'row-container concepts-tables-row');
     const concepts_table_col = concepts_tables_row.append('div').attr('class', 'col-container col-resizable');
     const dragbar_col = concepts_tables_row.append('div').attr('class', 'drag-bar');
-    const concept_hier_table_col = concepts_tables_row.append('div').attr('class', 'col-container col-collapsed');
+    const concept_hier_col = concepts_tables_row.append('div').attr('class', 'col-container col-collapsed');
 
     // Add resizing functionality to the structure you created
     const conceptsResizablePanel = MakeDragBar({
         dispatch: conceptsDragbarDispatcher,
         dragBar: dragbar_col,
         leftContainer: concepts_table_col,
-        rightContainer: concept_hier_table_col,
+        rightContainer: concept_hier_col,
         parentContainer: concepts_tables_row,
         visContainer: vis_container
     });
 
-    const concepts_parents_row = concept_hier_table_col.append('div').attr('class', 'row-container concepts-tables-row');
-    const concepts_children_row = concept_hier_table_col.append('div').attr('class', 'row-container concepts-tables-row');
+    // const concepts_parents_row = concept_hier_col.append('div').attr('class', 'row-container concepts-tables-row');
+    // const concepts_children_row = concept_hier_col.append('div').attr('class', 'row-container concepts-tables-row');
 
     // </editor-fold>
 

@@ -121,6 +121,8 @@ class CohortViewer(anywidget.AnyWidget):
             return self._get_parent_nodes(params)
         if request_type == 'get_child_nodes':
             return self._get_child_nodes(params)
+        if request_type == 'get_immediate_nodes':
+            return self._get_immediate_nodes(params)
         # ... other handlers
         else:
             # self.log(f'Raised ValueError: "Unknown request type: {request_type}"')
@@ -159,6 +161,32 @@ class CohortViewer(anywidget.AnyWidget):
             # Prune to 2 levels (parent + 2 child levels)
             pruned_parent = self._prune_tree(parent_dict, max_depth=2)
             result['parents'].append(pruned_parent)
+
+        return result
+
+    def _get_immediate_nodes(self, params):
+        """Get parents with first 2 levels of children only"""
+        # self.log(f'params: {params}')
+        node_id = params.get('node_id')
+        parent_ids = params.get('parent_ids')
+        node = self._conditionsHierarchy.get_node(node_id)
+
+        result = {'caller_node_id': node_id, 'parents': [], 'children': []}
+
+        for parent_id in parent_ids:
+            parent_node = self._conditionsHierarchy.get_node(parent_id)
+            parent_dict = parent_node.to_dict()
+
+            # Prune to 2 levels (parent + 2 child levels)
+            pruned_parent = self._prune_tree(parent_dict, max_depth=0)
+            result['parents'].append(pruned_parent)
+
+        for child_node in node.children:
+            # self.log(f'child_node: {child_node}')
+            child_dict = child_node.to_dict()
+            pruned_child = self._prune_tree(child_dict, max_depth=0)
+            # self.log(f'pruned_child: ', pruned_child)
+            result['children'].append(pruned_child)
 
         return result
 
