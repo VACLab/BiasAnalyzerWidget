@@ -1596,19 +1596,27 @@ function render({ model, el }) {
         }
 
         function getPrevTooltipContent(d, colfield){
+
+            console.log('d = ', d);
+            console.log('colfield = ', colfield);
+
             const heading = `<strong>Concept: ${d.concept_code}</strong><br>(${d.concept_name})<hr>`;
             // default to cohort 1, unless we know it is 2
             let cohort = 1;
             if (colfield.includes('2'))
                 cohort = 2;
 
-            // console.log('cohort # = ', cohort);
-            // console.log('total_counts = ', total_counts);
+            console.log('cohort # = ', cohort);
+            console.log('total_counts = ', total_counts);
 
-            let count = d['count_in_cohort' + cohort];
             let t_count = total_counts[cohort - 1];
 
-            // console.log('t_count = ', t_count);
+            console.log('t_count = ', t_count);
+
+            let count_key = 'count_in_cohort';
+            if(!isSingleCohort())
+                count_key = count_key + cohort;
+            let count = d[count_key];
 
             const patient_count_text = `${formatFraction(count || 0, t_count)}`;
             return `${heading}</strong>Count: ${patient_count_text}`;
@@ -2734,9 +2742,16 @@ function render({ model, el }) {
         SpinnerBox(conceptsTableDispatcher, {label: 'Prev dp'})
     );
 
-    concepts_table_col.append(() =>
-        ConceptsTable(conceptsTableDispatcher, cond_hier, [cohort1_stats[0].total_count, cohort2_stats[0].total_count], [cohort1_shortname, cohort2_shortname])
-    );
+    if(cohort2_exists) {
+        concepts_table_col.append(() =>
+            ConceptsTable(conceptsTableDispatcher, cond_hier, [cohort1_stats[0].total_count, cohort2_stats[0].total_count], [cohort1_shortname, cohort2_shortname])
+        );
+    }
+    else{
+        concepts_table_col.append(() =>
+            ConceptsTable(conceptsTableDispatcher, cond_hier, [cohort1_stats[0].total_count], [cohort1_shortname])
+        );
+    }
 
     // </editor-fold>
 

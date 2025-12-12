@@ -166,20 +166,20 @@ class CohortViewer(anywidget.AnyWidget):
 
     def _get_immediate_nodes(self, params):
         """Get parents with first 2 levels of children only"""
-        self.log(f'params: {params}')
+        # self.log(f'params: {params}')
         caller_node_id = params.get('caller_node_id')
         parent_ids = params.get('parent_ids')
         caller_node = self._conditionsHierarchy.get_node(caller_node_id)
-        self.log(f'caller_node: {caller_node}')
+        # self.log(f'caller_node: {caller_node}')
         caller_dict = caller_node.to_dict(include_children = False)
-        self.log(f'caller_dict: {caller_dict}')
+        # self.log(f'caller_dict: {caller_dict}')
 
         result = {'caller_node': caller_dict, 'parents': [], 'children': []}
 
         self.log(f'parent_ids: {parent_ids}')
         for parent_id in parent_ids:
             parent_node = self._conditionsHierarchy.get_node(parent_id)
-            self.log(f'parent_node: {parent_node}')
+            # self.log(f'parent_node: {parent_node}')
             parent_dict = parent_node.to_dict()
 
             # Prune to 2 levels (parent + 2 child levels)
@@ -294,6 +294,22 @@ class CohortViewer(anywidget.AnyWidget):
                 new_node['depth'] = depth
                 keep_nodes.append(new_node)
 
+        def get_node_count(node, cohort_id):
+            c = node.get_metrics(cohort_id)
+            # if the cohort doesn't exist for this node, then set it to zero
+            if not c or 'count' not in c:
+                c['count'] = 0
+            return c['count']
+
+        def _get_total_count(stats):
+            """Safely extract 'total_count' from stats[0]. Returns None if unavailable."""
+            if not stats:  # None or empty
+                return 0
+            first = stats[0]
+            if first is None or not isinstance(first, dict):
+                return 0
+            return first.get('total_count')
+
         def get_node_diff(node):
             c1 = node.get_metrics(cohort_id_1)
             c2 = node.get_metrics(cohort_id_2)
@@ -307,6 +323,13 @@ class CohortViewer(anywidget.AnyWidget):
         # TODO: Change this so that we can recurse even if there is not a significant difference,
         #       so that we can scent/hint at lower significances
         def recurse(node, depth, cohort1_nobs, cohort2_nobs = 0):
+            count1 = get_node_count(node, cohort_id_1)
+            count2 = get_node_count(node, cohort_id_2)
+            cohort1_total = _get_total_count(self._cohort1Stats)
+            cohort2_total = _get_total_count(self._cohort2Stats)
+
+            if (count1 < cohort1_total * 0.01) or (cohort_id_2 > 0 and count2 < cohort1_total * 0.01):
+                return
 
             children = node.children
 
@@ -323,7 +346,7 @@ class CohortViewer(anywidget.AnyWidget):
                     children_diffs.append(get_node_diff(child))
                 # need at least 2 values for meaningful variance
                 if len(children_diffs) < 2:
-                    add_keep_node(node, depth)
+                    add_keep_node(node, depth)  # keep the parent
                     return
                 # get the variance in differences across child nodes
                 var =  np.var(children_diffs)
@@ -337,7 +360,7 @@ class CohortViewer(anywidget.AnyWidget):
                     children_prevs.append(child.get_metrics(self.this_widget_cohort1_id)['prevalence'])
                 # need at least 2 values for meaningful variance
                 if len(children_prevs) < 2:
-                    add_keep_node(node, depth)
+                    add_keep_node(node, depth)  # keep the parent
                     return
                 # get the variance in differences across child nodes
                 var =  np.var(children_prevs)
