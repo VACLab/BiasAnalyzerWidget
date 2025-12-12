@@ -278,12 +278,12 @@ function render({ model, el }) {
     // handles the concepts table
     const conceptsTableDispatcher =
         d3.dispatch('select-row', 'filter', 'sort', 'change-dp', 'column-resize', 'view-pct');
-    // handles the hierarchy table
-    const hierarchyTableDispatcher = d3.dispatch('get-children', 'filter', 'sort', 'change-dp', 'column-resize', 'view-pct');
     // handles all tooltips
     const tooltipDispatcher = d3.dispatch("show", "hide");
     // handles conditions drag bar
     const conceptsDragbarDispatcher = d3.dispatch('dragstart', 'drag', 'dragend', 'toggle');
+    // handles hierarchy view events
+    const hierarchyViewDispatcher = d3.dispatch('cardDropped', 'centerCardChanged');
 
     tooltipDispatcher.on("show", function({ content, event }) {
         const containerRect = vis_container.node().getBoundingClientRect();
@@ -1187,7 +1187,7 @@ function render({ model, el }) {
         function drawSeriesBars(container, series, series_index, class_base_name, yScale) {
             function getTooltipContent(d, series, xlabel) {
                 const patient_count_text = `${d3.format(".0%")(d.probability || 0)} (${formatFraction(d.value || 0, series.total_count)})`;
-                return `<strong>${series.shortname}: ${xlabel + ': ' || ''} ${d.category}</strong><hr>Count: ${patient_count_text}`;
+                return `<strong>${series.shortname}: ${xlabel + ': ' || ''} ${d.category}</strong><hr>Proportion: ${patient_count_text}`;
             }
 
             const class_name = class_base_name + series_index;
@@ -1270,13 +1270,22 @@ function render({ model, el }) {
 
     // <editor-fold desc="---------- HIERARCHICAL TABLE FUNCTIONS ----------">
 
-    function DashboardSVG(data, { width = 960, height = 720 } = {}) {
-        console.log('DashboardSVG data = ', data);
+    function HierarchyView(data, { width = 960, height = 720 } = {}) {
+        console.log('HierarchyView data = ', data);
 
-        // State to track which card is in the center
-        let centerCard = data.centerCard || null;
+        // Layout constants
+        const H1 = 180;           // Top section height
+        const H2 = 360;           // Middle section height
+        const H3 = height - H1 - H2;  // Bottom section height
+        const pad = 12;           // Padding
+        const cardPadding = 8;    // Padding between cards
+        const minCardWidth = 150;
+        const minCardHeight = 80;
 
-        // Create the SVG root
+        // State
+        let centerCard = data.caller_node || null;
+
+        // Create SVG root
         const svg = d3.create("svg")
             .attr("viewBox", `0 0 ${width} ${height}`)
             .attr("width", "100%")
@@ -1284,20 +1293,37 @@ function render({ model, el }) {
             .attr("preserveAspectRatio", "xMidYMid meet")
             .style("display", "block");
 
-        // Define row heights
-        const H1 = 180;
-        const H2 = 360;
-        const H3 = height - H1 - H2;
-        const pad = 12;
+        // Create persistent layers (z-order: middle behind, top and bottom in front)
+        const middleLayer = svg.append("g").attr("class", "middle-layer");
+        const topLayer = svg.append("g").attr("class", "top-layer");
+        const bottomLayer = svg.append("g").attr("class", "bottom-layer");
 
-        // Sub-function to create an SVG card
-        function createCard(parentGroup, x, y, cardWidth, cardHeight, title, isDraggable = true) {
+        // Create a single card
+        function createCard(parentGroup, x, y, cardWidth, cardHeight, item, isDraggable = true) {
+
+            function getSingleCohortCardContent(d){
+                const heading = `<strong>Concept: ${d.concept_code}</strong><br>(${d.concept_name})<hr>`;
+                let msg = `(no difference)`;
+                if(series_name !== "")
+                    msg = `(higher in ${series_name})`;
+                return `${heading} Diff. in Prev: ${Math.abs(d.difference_in_prevalence).toFixed(prevalence_dp)}<br>${msg}`;
+            }
+
+            function getCompareCohortsCardContent(d){
+                const heading = `<strong>Concept: ${d.concept_code}</strong><br>(${d.concept_name})<hr>`;
+                let msg = `(no difference)`;
+                if(series_name !== "")
+                    msg = `(higher in ${series_name})`;
+                return `${heading} Diff. in Prev: ${Math.abs(d.difference_in_prevalence).toFixed(prevalence_dp)}<br>${msg}`;
+            }
+
             const card = parentGroup.append("g")
+                .datum(item)
                 .attr("transform", `translate(${x},${y})`)
                 .attr("class", "card")
                 .style("cursor", isDraggable ? "grab" : "default");
 
-            const rect = card.append("rect")
+            card.append("rect")
                 .attr("width", cardWidth)
                 .attr("height", cardHeight)
                 .attr("rx", 8)
@@ -1308,125 +1334,131 @@ function render({ model, el }) {
             card.append("text")
                 .attr("x", 16)
                 .attr("y", 32)
-                .attr("font-size", 14)
-                .attr("font-weight", 600)
-                .attr("fill", "#333")
-                .text(title);
+                .attr("font-size", font_size)
+                .attr("font-weight", 'bold')
+                .attr("fill", "#000")
+                .text(isSingleCohort() ? getSingleCohortCardContent(item) : getCompareCohortsCardContent(item));
 
             if (isDraggable) {
-                setupDragBehavior(card, title, rect, cardWidth, cardHeight);
+                setupDragBehavior(card, item, cardWidth, cardHeight);
             }
 
             return card;
         }
 
-        // Setup drag behavior for cards
-        function setupDragBehavior(card, cardTitle, rect, cardWidth, cardHeight) {
-            let startX, startY, originalTransform;
+        // Setup drag-and-drop behavior
+        function setupDragBehavior(card, item, cardWidth, cardHeight) {
+            let startX, startY, originalTransform, parentTransform;
 
             const drag = d3.drag()
                 .on("start", function(event) {
-                    card.style("cursor", "grabbing");
-                    card.raise(); // Bring to front
-                    rect.attr("stroke", "#0d6efd").attr("stroke-width", 2);
+                    // Visual feedback
+                    card.style("cursor", "grabbing").raise();
+                    card.select("rect").attr("stroke", "#0d6efd").attr("stroke-width", 2);
 
-                    const transform = d3.select(this).attr("transform");
-                    const match = transform.match(/translate\(([^,]+),([^)]+)\)/);
-                    startX = parseFloat(match[1]);
-                    startY = parseFloat(match[2]);
-                    originalTransform = transform;
+                    // Store initial positions
+                    const [cardX, cardY] = getTransform(d3.select(this));
+                    const [parentX, parentY] = getTransform(d3.select(this.parentNode));
+                    startX = cardX;
+                    startY = cardY;
+                    originalTransform = d3.select(this).attr("transform");
+                    parentTransform = { x: parentX, y: parentY };
+
+                    highlightDropZone(true);
                 })
                 .on("drag", function(event) {
                     const newX = startX + event.x;
                     const newY = startY + event.y;
                     d3.select(this).attr("transform", `translate(${newX},${newY})`);
+
+                    // Check if hovering over drop zone
+                    const absoluteY = newY + parentTransform.y;
+                    const isOverDropZone = isInDropZone(absoluteY, cardHeight);
+                    highlightDropZone(true, isOverDropZone);
                 })
                 .on("end", function(event) {
+                    // Reset visual feedback
                     card.style("cursor", "grab");
-                    rect.attr("stroke", "#ddd").attr("stroke-width", 1);
+                    card.select("rect").attr("stroke", "#ddd").attr("stroke-width", 1);
 
                     const finalX = startX + event.x;
                     const finalY = startY + event.y;
+                    const absoluteY = finalY + parentTransform.y;
 
-                    // Check if dropped in center area
-                    const midY = H1;
-                    const centerTop = midY + pad;
-                    const centerBottom = midY + H2;
+                    if (isInDropZone(absoluteY, cardHeight)) {
+                        // Drop successful - update center card
+                        const previousCard = centerCard;
+                        centerCard = item;
 
-                    if (finalY + cardHeight/2 >= centerTop && finalY + cardHeight/2 <= centerBottom) {
-                        // Dropped in center - update data and redraw
-                        centerCard = cardTitle;
-                        redrawDashboard();
+                        hierarchyViewDispatcher.call('cardDropped', null, {
+                            newCard: item,
+                            previousCard: previousCard
+                        });
+                        hierarchyViewDispatcher.call('centerCardChanged', null, {
+                            centerCard: item
+                        });
+
+                        redrawHierarchyView();
                     } else {
-                        // Not in center - return to original position
+                        // Return to original position
                         d3.select(this)
                             .transition()
                             .duration(300)
                             .attr("transform", originalTransform);
                     }
+
+                    highlightDropZone(false);
                 });
 
             card.call(drag);
         }
 
-        // Function to redraw the entire dashboard
-        function redrawDashboard() {
-            // Clear all groups
-            svg.selectAll("g").remove();
-
-            // Filter out the center card from parents and children
-            const parents = (data.parents || []).filter(p => p !== centerCard);
-            const children = (data.children || []).filter(c => c !== centerCard);
-
-            // Redraw top group
-            const top = svg.append("g").attr("transform", `translate(${pad},${pad})`);
-            const parentCardPadding = 8;
-            const availableTopWidth = width - 2 * pad;
-            const parentCardHeight = H1 - pad;
-            layoutCardsInGrid(top, parents, availableTopWidth, parentCardHeight, parentCardPadding, true);
-
-            // Redraw middle group with center card
-            const midY = H1;
-            const mid = svg.append("g").attr("transform", `translate(${pad},${midY + pad})`);
-
-            if (centerCard) {
-                const centerCardWidth = width - 2 * pad;
-                const centerCardHeight = H2 - pad;
-                createCard(mid, 0, 0, centerCardWidth, centerCardHeight, centerCard, false);
-            } else {
-                // Show empty drop zone
-                mid.append("rect")
-                    .attr("width", width - 2 * pad)
-                    .attr("height", H2 - pad)
-                    .attr("rx", 8)
-                    .attr("fill", "#f8f9fa")
-                    .attr("stroke", "#ddd")
-                    .attr("stroke-dasharray", "5,5");
-
-                mid.append("text")
-                    .attr("x", (width - 2 * pad) / 2)
-                    .attr("y", (H2 - pad) / 2)
-                    .attr("text-anchor", "middle")
-                    .attr("font-size", 16)
-                    .attr("fill", "#999")
-                    .text("Drop a card here");
-            }
-
-            // Redraw bottom group
-            const botY = H1 + H2;
-            const bottom = svg.append("g").attr("transform", `translate(${pad},${botY + pad})`);
-            const childCardPadding = 8;
-            const availableBottomWidth = width - 2 * pad;
-            const childCardHeight = H3 - pad;
-            layoutCardsInGrid(bottom, children, availableBottomWidth, childCardHeight, childCardPadding, true);
+        // Check if a card is in the drop zone
+        function isInDropZone(absoluteY, cardHeight) {
+            const centerTop = H1 + pad;
+            const centerBottom = H1 + H2;
+            const cardCenter = absoluteY + cardHeight / 2;
+            return cardCenter >= centerTop && cardCenter <= centerBottom;
         }
 
-        // Sub-function to layout cards in a grid (wrapping to new rows)
-        function layoutCardsInGrid(parentGroup, items, availableWidth, availableHeight, cardPadding, isDraggable = true) {
+        // Extract x, y from transform attribute
+        function getTransform(selection) {
+            const transform = selection.attr("transform");
+            const match = transform?.match(/translate\(([^,]+),([^)]+)\)/);
+            return match ? [parseFloat(match[1]), parseFloat(match[2])] : [0, 0];
+        }
+
+        // Highlight/unhighlight the drop zone
+        function highlightDropZone(show, hovering = false) {
+            const dropZone = middleLayer.select(".drop-zone-indicator");
+
+            if (show) {
+                if (hovering) {
+                    dropZone
+                        .attr("stroke", "#0d6efd")
+                        .attr("stroke-width", 3)
+                        .attr("stroke-dasharray", null)
+                        .attr("fill", "#e7f3ff");
+                } else {
+                    dropZone
+                        .attr("stroke", "#999")
+                        .attr("stroke-width", 2)
+                        .attr("stroke-dasharray", "5,5")
+                        .attr("fill", "#f0f9f4");
+                }
+            } else {
+                dropZone
+                    .attr("stroke", "#ddd")
+                    .attr("stroke-width", 1)
+                    .attr("stroke-dasharray", centerCard ? null : "5,5")
+                    .attr("fill", centerCard ? "#fff" : "#f8f9fa");
+            }
+        }
+
+        // Layout cards in a grid with wrapping
+        function layoutCardsInGrid(parentGroup, items, availableWidth, availableHeight, isDraggable = true) {
             if (items.length === 0) return;
 
-            const minCardWidth = 150;
-            const minCardHeight = 80;
             const cardsPerRow = Math.floor((availableWidth + cardPadding) / (minCardWidth + cardPadding));
             const actualCardsPerRow = Math.max(1, Math.min(cardsPerRow, items.length));
             const cardWidth = (availableWidth - (actualCardsPerRow - 1) * cardPadding) / actualCardsPerRow;
@@ -1437,17 +1469,100 @@ function render({ model, el }) {
             items.forEach((item, i) => {
                 const row = Math.floor(i / actualCardsPerRow);
                 const col = i % actualCardsPerRow;
-                const cardX = col * (cardWidth + cardPadding);
-                const cardY = row * (cardHeight + cardPadding);
-                createCard(parentGroup, cardX, cardY, cardWidth, cardHeight, item, isDraggable);
+                const x = col * (cardWidth + cardPadding);
+                const y = row * (cardHeight + cardPadding);
+                createCard(parentGroup, x, y, cardWidth, cardHeight, item, isDraggable);
             });
         }
 
+        // Draw the middle section (drop zone or center card)
+        function drawMiddleSection() {
+            const mid = middleLayer.append("g").attr("transform", `translate(${pad},${H1 + pad})`);
+            const centerCardWidth = width - 2 * pad;
+            const centerCardHeight = H2 - pad;
+
+            if (centerCard) {
+                // Draw background indicator
+                mid.append("rect")
+                    .attr("class", "drop-zone-indicator")
+                    .attr("width", centerCardWidth)
+                    .attr("height", centerCardHeight)
+                    .attr("rx", 8)
+                    .attr("fill", "#fff")
+                    .attr("stroke", "#ddd")
+                    .attr("stroke-width", 1);
+
+                // Draw center card
+                createCard(mid, 0, 0, centerCardWidth, centerCardHeight, centerCard, false);
+            } else {
+                // Draw empty drop zone
+                mid.append("rect")
+                    .attr("class", "drop-zone-indicator")
+                    .attr("width", centerCardWidth)
+                    .attr("height", centerCardHeight)
+                    .attr("rx", 8)
+                    .attr("fill", "#f8f9fa")
+                    .attr("stroke", "#ddd")
+                    .attr("stroke-dasharray", "5,5");
+
+                mid.append("text")
+                    .attr("x", centerCardWidth / 2)
+                    .attr("y", centerCardHeight / 2)
+                    .attr("text-anchor", "middle")
+                    .attr("font-size", 16)
+                    .attr("fill", "#999")
+                    .text("Drop a card here");
+            }
+        }
+
+        // Redraw the entire view
+        function redrawHierarchyView() {
+            // Clear all layers
+            topLayer.selectAll("*").remove();
+            middleLayer.selectAll("*").remove();
+            bottomLayer.selectAll("*").remove();
+
+            // Filter out center card from parents and children
+            const centerCardId = centerCard?.concept_id;
+            const parents = (data.parents || []).filter(p => p.concept_id !== centerCardId);
+            const children = (data.children || []).filter(c => c.concept_id !== centerCardId);
+
+            // Draw top section (parents)
+            const top = topLayer.append("g").attr("transform", `translate(${pad},${pad})`);
+            layoutCardsInGrid(top, parents, width - 2 * pad, H1 - pad, true);
+
+            // Draw middle section (center card or drop zone)
+            drawMiddleSection();
+
+            // Draw bottom section (children)
+            const bottom = bottomLayer.append("g").attr("transform", `translate(${pad},${H1 + H2 + pad})`);
+            layoutCardsInGrid(bottom, children, width - 2 * pad, H3 - pad, true);
+        }
+
         // Initial draw
-        redrawDashboard();
+        redrawHierarchyView();
 
         return svg.node();
     }
+
+// Example usage:
+    /*
+    const svg_hier = HierarchyView(immediate_nodes_data, {
+        width: concept_hier_rect_bounds.width,
+        height: svgHeight
+    });
+    concept_hier_wrapper.node().appendChild(svg_hier);
+
+    // Listen to events
+    hierarchyViewDispatcher.on('cardDropped', function(eventData) {
+        console.log('Card dropped:', eventData.newCard);
+        console.log('Previous card:', eventData.previousCard);
+    });
+
+    hierarchyViewDispatcher.on('centerCardChanged', function(eventData) {
+        console.log('Center card changed:', eventData.centerCard);
+    });
+    */
 
     // </editor-fold>
 
@@ -1472,7 +1587,7 @@ function render({ model, el }) {
         let page_size = pageSize;
 
         // TODO: Show counts as fractions of total for each series (check that series 2 exists as well)
-        function getTooltipContent(d, series_name){
+        function getPrevDiffTooltipContent(d, series_name){
             const heading = `<strong>Concept: ${d.concept_code}</strong><br>(${d.concept_name})<hr>`;
             let msg = `(no difference)`;
             if(series_name !== "")
@@ -1480,19 +1595,24 @@ function render({ model, el }) {
             return `${heading} Diff. in Prev: ${Math.abs(d.difference_in_prevalence).toFixed(prevalence_dp)}<br>${msg}`;
         }
 
-        // function getTooltipContent(d, series_name, counts = [], total_counts = [], shortnames = []){
-        //     console.log('getTooltipContent d = ', d);
-        //     const heading = `<strong>Concept: ${d.concept_code}</strong><br>(${d.concept_name})<hr>`;
-        //     let msg = ` (no difference)`;
-        //     if(series_name !== "")
-        //         msg = `${d} (higher in ${series_name})`;
-        //
-        //     msg += `&emsp; ${shortnames[0]}: &emsp; &emsp ${shortnames[1]}: `;
-        //
-        //     msg += `&emsp ${formatFraction(counts[0] || 0, total_counts[0])} &emsp; ${formatFraction(counts[1] || 0, total_counts[1])}`;
-        //
-        //     return `${heading} Diff. in Prev: ${Math.abs(d.difference_in_prevalence).toFixed(prevalence_dp)}<br>${msg}`;
-        // }
+        function getPrevTooltipContent(d, colfield){
+            const heading = `<strong>Concept: ${d.concept_code}</strong><br>(${d.concept_name})<hr>`;
+            // default to cohort 1, unless we know it is 2
+            let cohort = 1;
+            if (colfield.includes('2'))
+                cohort = 2;
+
+            // console.log('cohort # = ', cohort);
+            // console.log('total_counts = ', total_counts);
+
+            let count = d['count_in_cohort' + cohort];
+            let t_count = total_counts[cohort - 1];
+
+            // console.log('t_count = ', t_count);
+
+            const patient_count_text = `${formatFraction(count || 0, t_count)}`;
+            return `${heading}</strong>Count: ${patient_count_text}`;
+        }
 
         function prepareCondOccurCompareData() {
             // Add calculated fields
@@ -2028,20 +2148,20 @@ function render({ model, el }) {
                     }
                 });
 
-            function getPrevalenceValue(val, col, d) {
+            function getPrevalenceValue(val, col) {
                 // Define which fields are numeric
                 const numericFields =
                     ["prevalence", "count_in_cohort", "cohort1_prevalence", "cohort2_prevalence"];
                 const no_dp = ["count_in_cohort"];
 
                 if (val === null || val === undefined) {
-                    if(numericFields.includes(col.field))
-                        val = dafault_prevalence
-                    else val = 0;
+                    val = dafault_prevalence;
                 }
 
-                if(numericFields.includes(col.field) && !no_dp.includes(col.field))
-                    val = val.toFixed(prevalence_dp)
+                if(numericFields.includes(col.field)){
+                    if(!no_dp.includes(col.field))
+                        val = val.toFixed(prevalence_dp)
+                }
 
                 return val;
             }
@@ -2066,18 +2186,17 @@ function render({ model, el }) {
                         .attr("dy", "0.35em")
                         .attr("text-anchor", "start")
                         .text(d => {
-                            return getPrevalenceValue(d[col.field], col, d);
+                            return getPrevalenceValue(d[col.field], col);
+                        })
+                    .on("mouseover", function (event, d ) {
+                        tooltipDispatcher.call("show", null, {
+                            content: getPrevTooltipContent(d, col.field),
+                            event: event
                         });
-                    // TODO: for prevalence column only, show fraction (e.g., 404/414)
-                    // .on("mouseover", function (event, d ) {
-                    //     tooltipDispatcher.call("show", null, {
-                    //         content: '',
-                    //         event: event
-                    //     });
-                    // })
-                    // .on("mouseout", function () {
-                    //     tooltipDispatcher.call("hide");
-                    // });
+                    })
+                    .on("mouseout", function () {
+                        tooltipDispatcher.call("hide");
+                    });
                 } else {
 
                     function getHighestPrevalenceSeriesName(d) {
@@ -2096,18 +2215,20 @@ function render({ model, el }) {
                                 .attr("dy", "0.35em")
                                 .attr("text-anchor", "start")
                                 .text(d => {
-                                    return getPrevalenceValue(d[col.field], col, d);
+                                    return getPrevalenceValue(d[col.field], col);
+                                })
+                                .on("mouseover", function (event, d ) {
+                                    console.log('d = ', d)
+                                    if(col.field.includes('prevalence')) {
+                                        tooltipDispatcher.call("show", null, {
+                                            content: getPrevTooltipContent(d, col.field),
+                                            event: event
+                                        });
+                                    }
+                                })
+                                .on("mouseout", function () {
+                                    tooltipDispatcher.call("hide");
                                 });
-                            // TODO: for prevalence columns only, show fraction (e.g., 404/414)
-                            // .on("mouseover", function (event, d ) {
-                            //     tooltipDispatcher.call("show", null, {
-                            //         content: '',
-                            //         event: event
-                            //     });
-                            // })
-                            // .on("mouseout", function () {
-                            //     tooltipDispatcher.call("hide");
-                            // });
                             break;
 
                         case "bar":
@@ -2161,7 +2282,7 @@ function render({ model, el }) {
                                     .attr("y2", outerHeight)
                                     .attr("stroke", "grey")
                                     .attr("stroke-width", 1)
-                                    .attr("stroke-dasharray", "3,3");
+                                    .attr("stroke-hierarray", "3,3");
 
                                 const diff_val = d.difference_in_prevalence;
                                 const abs_diff = Math.abs(diff_val);
@@ -2175,15 +2296,17 @@ function render({ model, el }) {
                                         .attr("height", innerH)
                                         .attr("fill", diff_val < 0 ? color(shortnames[1]) : color(shortnames[0]))
                                         .on("mouseover", function (event, d) {
-                                            const highest_prevalence = getHighestPrevalenceSeriesName(d);
-                                            let highest_series_name = "";
-                                            if(highest_prevalence >= 0)
-                                                highest_series_name = shortnames[highest_prevalence];
+                                            if(col.field.includes('prevalence')) {
+                                                const highest_prevalence = getHighestPrevalenceSeriesName(d);
+                                                let highest_series_name = "";
+                                                if (highest_prevalence >= 0)
+                                                    highest_series_name = shortnames[highest_prevalence];
 
-                                            tooltipDispatcher.call("show", null, {
-                                                content: getTooltipContent(d, highest_series_name, ),
-                                                event: event
-                                            });
+                                                tooltipDispatcher.call("show", null, {
+                                                    content: getPrevDiffTooltipContent(d, highest_series_name),
+                                                    event: event
+                                                });
+                                            }
                                         })
                                         .on("mouseout", function () {
                                             tooltipDispatcher.call("hide");
@@ -2208,7 +2331,7 @@ function render({ model, el }) {
                                                 highest_series_name = shortnames[highest_prevalence];
 
                                             tooltipDispatcher.call("show", null, {
-                                                content: getTooltipContent(d, highest_series_name),
+                                                content: getPrevDiffTooltipContent(d, highest_series_name),
                                                 event: event
                                             });
                                         })
@@ -2269,51 +2392,11 @@ function render({ model, el }) {
             }
 
             // Fetch parent nodes with progress indicator
-            // try {
-            //     const parentsData = await requestManager.request(
-            //         "get_parent_nodes",
-            //         {
-            //             node_id: rowData.concept_id,
-            //             parent_ids: rowData.parent_ids
-            //         },
-            //         {
-            //             statusMessage: "Loading parent nodes...",
-            //             progressContainer: concepts_parents_row.node(),
-            //             showProgress: true
-            //         }
-            //     );
-            //
-            //     console.log("Received parents data:", parentsData);
-            //
-            //     // Update the table with the data
-            //     drawParentsTable(parentsData);
-            //
-            // } catch (error) {
-            //     if (error.message === 'Request cancelled') {
-            //         console.log('Parent nodes request was cancelled');
-            //         // Deselect the row when cancelled
-            //         // Show default message for cancelled requests
-            //         showNoDataMessage();
-            //     } else {
-            //         console.error("Error fetching parent nodes:", error);
-            //
-            //         // Show error message in the panel
-            //         d3.select(concepts_parents_row.node()).selectAll('*').remove();
-            //         d3.select(concepts_parents_row.node())
-            //             .append('p')
-            //             .style('padding', '8px')
-            //             .style('color', '#f44336')
-            //             .style('font-size', '12px')
-            //             .text(`Error: ${error.message || 'Failed to fetch parent nodes'}`);
-            //     }
-            // }
-
-            // Fetch parent nodes with progress indicator
             try {
                 const immediate_nodes_data = await requestManager.request(
                     "get_immediate_nodes",
                     {
-                        node_id: rowData.concept_id,
+                        caller_node_id: rowData.concept_id,
                         parent_ids: rowData.parent_ids
                     },
                     {
@@ -2338,8 +2421,9 @@ function render({ model, el }) {
                     .style('position', 'relative')
                     .style('box-sizing', 'border-box');
 
-// Function to create/update the SVG
-                function updateDashboardSVG() {
+                // Function to create/update the SVG
+                // TODO: Move this to the hierarchy viewer and call it from here
+                function updateHierarchyView() {
                     // Clear existing content
                     concept_hier_wrapper.node().innerHTML = '';
 
@@ -2369,24 +2453,24 @@ function render({ model, el }) {
 
                     const svgHeight = topHeight + middleSectionHeight + bottomHeight;
 
-                    const svg_hier = DashboardSVG(immediate_nodes_data, {
+                    const svg_hier = HierarchyView(immediate_nodes_data, {
                         width: concept_hier_rect_bounds.width,
                         height: svgHeight
                     });
                     concept_hier_wrapper.node().appendChild(svg_hier);
                 }
 
-// Initial draw
-                updateDashboardSVG();
+                // Initial draw
+                updateHierarchyView();
 
-// Listen to drag events and redraw
-                conceptsDragbarDispatcher.on('drag.dashboard', () => {
-                    updateDashboardSVG();
+                // Listen to drag events and redraw
+                conceptsDragbarDispatcher.on('drag.hiercard', () => {
+                    updateHierarchyView();
                 });
 
-// Also listen to dragend for a final update
-                conceptsDragbarDispatcher.on('dragend.dashboard', () => {
-                    updateDashboardSVG();
+                // Also listen to dragend for a final update
+                conceptsDragbarDispatcher.on('dragend.hiercard', () => {
+                    updateHierarchyView();
                 });
 
             } catch (error) {
@@ -2409,75 +2493,6 @@ function render({ model, el }) {
                         .text(`Error: ${error.message || 'Failed to fetch immediate nodes'}`);
                 }
             }
-        }
-
-        function drawParentsTable(parentsData) {
-            // Your logic to populate the new table with parents and children
-            // For example:
-            // const { parents, children } = relatedData;
-            console.log("Parent Data:", parentsData);
-
-            // Column definitions
-            const columns = [
-                { field: 'concept_name', label: 'Concept Name', width: 300 },
-                { field: 'concept_code', label: 'Concept Code', width: 120 }
-                // ,
-                // { field: 'cohort1_prevalence', label: 'Cohort1 Prevalence', width: 100, type: 'percentage', align: 'right' },
-                // { field: 'cohort2_prevalence', label: 'Cohort2 Prevalence', width: 120, type: 'percentage', decimals: 1, align: 'right' }
-            ];
-
-            // TODO: use columns here
-
-            // // Update table with parents
-            // if(concept_hier_col) {
-            //     clearElement(concept_hier_col);
-            //     // const table = HierarchicalTable(parentsData, columns, options);
-            //     const table = DashboardSVG(hier_data)
-            //     concept_hier_col.append(() => table);
-            // }
-
-            // TODO: Consolidate repeated code
-
-            const concept_hier_wrapper = concept_hier_col.append('div')
-                .style('height', '100%')
-                .style('overflow', 'auto')
-                .style('width', '100%')
-                .style('flex', '1 1 0')       // Override parent CSS
-                .style('min-height', '0')     // Critical for flex + scroll
-                .style('position', 'relative')
-                .style('box-sizing', 'border-box');
-
-            const concept_hier_rect_bounds = concept_hier_col.node().getBoundingClientRect();
-
-// Calculate SVG height based on number of cards
-            const parents = immediate_nodes_data.parents || [];
-            const children = immediate_nodes_data.children || [];
-
-            const minCardWidth = 150;
-            const cardPadding = 8;
-            const availableWidth = concept_hier_rect_bounds.width - 24;
-
-            const cardsPerRow = Math.floor((availableWidth + cardPadding) / (minCardWidth + cardPadding));
-            const actualCardsPerRow = Math.max(1, cardsPerRow);
-
-            const parentRows = Math.ceil(parents.length / actualCardsPerRow);
-            const childRows = Math.ceil(children.length / actualCardsPerRow);
-
-            const minCardHeight = 80;
-            const topSectionHeight = 180;
-            const middleSectionHeight = 360;
-            const bottomSectionHeight = 180;
-
-            const topHeight = Math.max(topSectionHeight, parentRows * (minCardHeight + cardPadding) + 24);
-            const bottomHeight = Math.max(bottomSectionHeight, childRows * (minCardHeight + cardPadding) + 24);
-
-            const svgHeight = topHeight + middleSectionHeight + bottomHeight;
-
-            const svg_hier = DashboardSVG(immediate_nodes_data, {
-                width: concept_hier_rect_bounds.width,
-                height: svgHeight
-            });
-            concept_hier_wrapper.node().appendChild(svg_hier);
         }
 
         function updateTableBody() {

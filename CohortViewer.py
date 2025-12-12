@@ -166,22 +166,27 @@ class CohortViewer(anywidget.AnyWidget):
 
     def _get_immediate_nodes(self, params):
         """Get parents with first 2 levels of children only"""
-        # self.log(f'params: {params}')
-        node_id = params.get('node_id')
+        self.log(f'params: {params}')
+        caller_node_id = params.get('caller_node_id')
         parent_ids = params.get('parent_ids')
-        node = self._conditionsHierarchy.get_node(node_id)
+        caller_node = self._conditionsHierarchy.get_node(caller_node_id)
+        self.log(f'caller_node: {caller_node}')
+        caller_dict = caller_node.to_dict(include_children = False)
+        self.log(f'caller_dict: {caller_dict}')
 
-        result = {'caller_node_id': node_id, 'parents': [], 'children': []}
+        result = {'caller_node': caller_dict, 'parents': [], 'children': []}
 
+        self.log(f'parent_ids: {parent_ids}')
         for parent_id in parent_ids:
             parent_node = self._conditionsHierarchy.get_node(parent_id)
+            self.log(f'parent_node: {parent_node}')
             parent_dict = parent_node.to_dict()
 
             # Prune to 2 levels (parent + 2 child levels)
             pruned_parent = self._prune_tree(parent_dict, max_depth=0)
             result['parents'].append(pruned_parent)
 
-        for child_node in node.children:
+        for child_node in caller_node.children:
             # self.log(f'child_node: {child_node}')
             child_dict = child_node.to_dict()
             pruned_child = self._prune_tree(child_dict, max_depth=0)
