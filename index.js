@@ -1595,7 +1595,7 @@ function render({ model, el }) {
             return `${heading} Diff. in Prev: ${Math.abs(d.difference_in_prevalence).toFixed(prevalence_dp)}<br>${msg}`;
         }
 
-        function getPrevTooltipContent(d, colfield){
+        function getTooltipContent(d, colfield){
 
             console.log('d = ', d);
             console.log('colfield = ', colfield);
@@ -2197,10 +2197,12 @@ function render({ model, el }) {
                             return getPrevalenceValue(d[col.field], col);
                         })
                     .on("mouseover", function (event, d ) {
-                        tooltipDispatcher.call("show", null, {
-                            content: getPrevTooltipContent(d, col.field),
-                            event: event
-                        });
+                        if(col.field.includes('prevalence') || col.field.includes('count')) {
+                            tooltipDispatcher.call("show", null, {
+                                content: getTooltipContent(d, col.field),
+                                event: event
+                            });
+                        }
                     })
                     .on("mouseout", function () {
                         tooltipDispatcher.call("hide");
@@ -2226,10 +2228,10 @@ function render({ model, el }) {
                                     return getPrevalenceValue(d[col.field], col);
                                 })
                                 .on("mouseover", function (event, d ) {
-                                    console.log('d = ', d)
+                                    // console.log('d = ', d)
                                     if(col.field.includes('prevalence')) {
                                         tooltipDispatcher.call("show", null, {
-                                            content: getPrevTooltipContent(d, col.field),
+                                            content: getTooltipContent(d, col.field),
                                             event: event
                                         });
                                     }
