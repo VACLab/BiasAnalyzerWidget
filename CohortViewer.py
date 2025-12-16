@@ -1,5 +1,4 @@
-from statistics import median
-
+# from statistics import median
 import anywidget
 import traitlets as t
 import pathlib
@@ -7,7 +6,8 @@ from datetime import datetime, date
 from decimal import Decimal
 import numpy as np
 import json
-from copy import deepcopy
+# from copy import deepcopy
+import time
 # from statistics import mode
 # from biasanalyzer.background.threading_utils import run_in_background
 
@@ -16,6 +16,11 @@ class CohortViewer(anywidget.AnyWidget):
     _css = pathlib.Path(__file__).parent / "index.css"
     initialized = t.Bool(default_value=False).tag(sync=True)
     _conditionsHierarchy = None  # class object of the whole tree
+
+    log_debug_info = False  # change to true to write to the debug log
+    if log_debug_info:
+        log_file = open('./debug.log', 'a', buffering=1)  # Line buffered
+    log_timings = False  # change to true to print timings to jupyter
 
     # List of developer-only keys
     _devKeys = [
@@ -40,15 +45,12 @@ class CohortViewer(anywidget.AnyWidget):
     response = t.Unicode('').tag(sync=True)
 
     def log(self, message):
+        if not self.log_debug_info:
+            return
         import datetime
         timestamp = datetime.datetime.now().strftime('%H:%M:%S.%f')[:-3]
         self.log_file.write(f"[{timestamp}] {message}\n")
         self.log_file.flush()
-
-    def clear_log(self):
-        """Clear the log output"""
-        if self.log_output:
-            self.log_output.clear_output()
 
     def log_object_type(self, msg, obj):
         self.log(msg)
@@ -64,6 +66,8 @@ class CohortViewer(anywidget.AnyWidget):
             import json
 
     def log_format_tree(self, node, depth=0):
+        if not self.log_debug_info:
+            return
         indent = "  " * depth
         output = f"{indent}- {json.dumps(node, ensure_ascii=False)}\n"
         # If node is a dict or list, traverse its children
@@ -75,6 +79,33 @@ class CohortViewer(anywidget.AnyWidget):
             for item in node:
                 output += self.log_format_tree(item, depth + 1)
         self.log(output)
+
+    def _format_elapsed(self, seconds: float) -> str:
+        """Return a compact, human-friendly duration string."""
+        if seconds < 1e-3:
+            return f"{seconds * 1e6:,.0f} µs"
+        elif seconds < 1:
+            return f"{seconds * 1e3:,.2f} ms"
+        elif seconds < 60:
+            return f"{seconds:,.2f} s"
+        elif seconds < 3600:
+            m, s = divmod(seconds, 60)
+            return f"{int(m)}m {s:,.2f}s"
+        else:
+            h, rem = divmod(seconds, 3600)
+            m, s = divmod(rem, 60)
+            return f"{int(h)}h {int(m)}m {s:,.2f}s"
+
+    def log_time_diff(self, msg, start=None):
+        if not self.log_timings or start is None:
+            return
+        elapsed = time.perf_counter() - start
+        print(f" ⏱️ {msg} {self._format_elapsed(elapsed)}")
+
+    def set_time_now(self, msg):
+        if not self.log_timings:
+            return None
+        return time.perf_counter()
 
     @t.observe('request')
     def _handle_request(self, change):
@@ -176,7 +207,7 @@ class CohortViewer(anywidget.AnyWidget):
 
         result = {'caller_node': caller_dict, 'parents': [], 'children': []}
 
-        self.log(f'parent_ids: {parent_ids}')
+        # self.log(f'parent_ids: {parent_ids}')
         for parent_id in parent_ids:
             parent_node = self._conditionsHierarchy.get_node(parent_id)
             # self.log(f'parent_node: {parent_node}')
@@ -231,26 +262,30 @@ class CohortViewer(anywidget.AnyWidget):
 
     def __init__(
             self,
-            bias=None,
+            # bias=None,
             cohort1=None,
             cohort2=None,
             cohort1_shortname='study',
-            cohort2_shortname='baseline',
-            **kwargs
+            cohort2_shortname='baseline'
     ):
+        # print("=" * 60)  # separator for python console log
+
+        init_start = self.set_time_now("CohortViewer.__init__ started")
+        super_start = self.set_time_now("CohortViewer.super().__init__() started")
 
         super().__init__()
-        # self.log_file = open('./debug.log', 'a', buffering=1)  # Line buffered
+        self.log_time_diff("super().__init__() took ", super_start)
 
         # READ PARAMETERS
 
         # end-user parameters
-        self._bias = bias  # NOTE: bias does not need to go to javascript, so no traitlet needed
+        # self._bias = bias  # NOTE: bias does not need to go to javascript, so no traitlet needed
         self._cohort1 = cohort1
         self._cohort2 = cohort2
         self._cohort1Shortname = cohort1_shortname
         self._cohort2Shortname = cohort2_shortname
         self.initialized = True
+        self.log_time_diff("__init__ time taken: ", init_start)
 
     @t.observe('initialized')
     def _on_initialized(self, change):
@@ -259,6 +294,7 @@ class CohortViewer(anywidget.AnyWidget):
 
     def on_initialized(self):
         # Perform actions that require the widget to be fully initialized
+        # print("on_initialized called")
         self.init_widget()
 
     @staticmethod
@@ -408,27 +444,67 @@ class CohortViewer(anywidget.AnyWidget):
         return keep_nodes
 
     def init_widget(self):
-        # if we are not injecting json, get the datasets
-        # we are also serializing so that object fields (e.g., dates) can be passed to javascript
-        # if not self.isJsonMode:
+        init_widget_start = self.set_time_now("init_widget started")
+
+        t0 = self.set_time_now("\nFetching and serializing cohort 1 metadata ")
         self._cohort1Metadata = self.make_json_serializable(self._cohort1.metadata)
+        self.log_time_diff("cohort1 metadata time taken: ", t0)
+
+        t0 = self.set_time_now("\nFetching and serializing cohort 1 stats ")
         self._cohort1Stats = self.make_json_serializable(self._cohort1.get_stats())
+        self.log_time_diff("cohort1 stats time taken: ", t0)
+
+        t0 = self.set_time_now("\nFetching and serializing cohort 1 race stats ")
         self._raceStats1 = self.make_json_serializable(self._cohort1.get_stats('race'))
+        self.log_time_diff("cohort1 race stats time taken: ", t0)
+
+        t0 = self.set_time_now("\nFetching and serializing cohort 1 ethnicity stats ")
         self._ethnicityStats1 = self.make_json_serializable(self._cohort1.get_stats('ethnicity'))
+        self.log_time_diff("cohort1 ethnicity stats time taken: ", t0)
+
+        t0 = self.set_time_now("\nFetching and serializing cohort 1 gender stats ")
         self._genderDist1 = self.make_json_serializable(self._cohort1.get_distributions('gender'))
+        self.log_time_diff("cohort1 gender stats time taken: ", t0)
+
+        t0 = self.set_time_now("\nFetching and serializing cohort 1 age stats ")
         self._ageDist1 = self.make_json_serializable(self._cohort1.get_distributions('age'))
+        self.log_time_diff("cohort1 age stats time taken: ", t0)
+
+        t0 = self.set_time_now("\nFetching concept stats ")
         cond1, cond_hier1 = self._cohort1.get_concept_stats()
+        self.log_time_diff("cohort1 concept stats time taken: ", t0)
         self._conditionsHierarchy = cond_hier1
         # print(f'self._conditionsHierarchy for cohort1 type = {type(self._conditionsHierarchy)}')
 
         if self._cohort2 is not None:
+            t0 = self.set_time_now("\nFetching and serializing cohort 2 metadata ")
             self._cohort2Metadata = self.make_json_serializable(self._cohort2.metadata)
+            self.log_time_diff("cohort2 metadata time taken: ", t0)
+
+            t0 = self.set_time_now("\nFetching and serializing cohort 2 stats ")
             self._cohort2Stats = self.make_json_serializable(self._cohort2.get_stats())
+            self.log_time_diff("cohort2 stats time taken: ", t0)
+
+            t0 = self.set_time_now("\nFetching and serializing cohort 2 race stats ")
             self._raceStats2 = self.make_json_serializable(self._cohort2.get_stats('race'))
+            self.log_time_diff("cohort2 race stats time taken: ", t0)
+
+            t0 = self.set_time_now("\nFetching and serializing cohort 2 ethnicity stats ")
             self._ethnicityStats2 = self.make_json_serializable(self._cohort2.get_stats('ethnicity'))
+            self.log_time_diff("cohort2 ethnicity stats time taken: ", t0)
+
+            t0 = self.set_time_now("\nFetching and serializing cohort 2 gender stats ")
             self._genderDist2 = self.make_json_serializable(self._cohort2.get_distributions('gender'))
+            self.log_time_diff("cohort2 gender stats time taken: ", t0)
+
+            t0 = self.set_time_now("\nFetching and serializing cohort 2 age stats ")
             self._ageDist2 = self.make_json_serializable(self._cohort2.get_distributions('age'))
+            self.log_time_diff("cohort2 age stats time taken: ", t0)
+
+            t0 = self.set_time_now("\nFetching concept stats ")
             cond2, cond_hier2 = self._cohort2.get_concept_stats()
+            self.log_time_diff("cohort2 concept stats time taken: ", t0)
+
             self._conditionsHierarchy = self._conditionsHierarchy.union(cond_hier2)
             # print(f'self._conditionsHierarchy union type = {type(self._conditionsHierarchy)}')
         else:
@@ -444,6 +520,8 @@ class CohortViewer(anywidget.AnyWidget):
         # print(f'root = {root}')
 
         # Give data to traitlets, mostly as lists of dictionaries
+
+        t0 = self.set_time_now("\nPassing data to traitlets ")
 
         # print(f'self._cohort1Metadata = {self._cohort1Metadata}')
         self.create_trait('_cohort1Metadata', t.Dict(), self._cohort1Metadata)
@@ -493,3 +571,5 @@ class CohortViewer(anywidget.AnyWidget):
         self.create_trait('_interestingConditions', t.List(t.Dict()),  self._interestingConditions)
 
         # print("initialization completed")
+        self.log_time_diff("Data passed to traitlets time taken: ", t0)
+        self.log_time_diff("init widget completed", init_widget_start)
