@@ -185,7 +185,7 @@ function render({ model, el }) {
                 // Remove from pending
                 this.pendingRequests.delete(requestId);
 
-                console.log(`Request ${requestId} cancelled`);
+                // console.log(`Request ${requestId} cancelled`);
 
                 // Optionally notify Python to stop processing (if supported)
                 // this.model.set("cancel_request", requestId);
@@ -206,7 +206,7 @@ function render({ model, el }) {
                 cancelledIds.push(id);
             });
             this.pendingRequests.clear();
-            console.log(`Cancelled ${cancelledIds.length} requests`);
+            // console.log(`Cancelled ${cancelledIds.length} requests`);
             return cancelledIds;
         }
 
@@ -264,7 +264,7 @@ function render({ model, el }) {
                 }
                 this.pendingRequests.delete(id);
 
-                console.log(`Request ${id} completed in ${duration}ms`);
+                // console.log(`Request ${id} completed in ${duration}ms`);
             }
         }
     }
@@ -387,18 +387,18 @@ function render({ model, el }) {
     `;
     }
 
+    function getCohortItemCount(item, cohort_id){
+        return item['metrics'][cohort_id].count;
+    }
+
+    function getCohortItemPrevalence(item, cohort_id){
+        return item['metrics'][cohort_id].prevalence;
+    }
+
     // converts timestamp to formatted date 'YYYY-MM-DD'
     function getIsoDateString(timestamp) {
         let aDate = new Date(timestamp);
         return aDate.toISOString().split('T')[0];
-    }
-
-    function logObjectType(label, obj) {
-        console.log(label + ' Object:', obj);
-        console.log(label + ' Constructor:', obj.constructor.name);
-        console.log(label + ' Keys:', Object.keys(obj));
-        console.log(label + ' Type of keys:', Object.keys(obj).map(k => `${k}: ${typeof obj[k]}`));
-        console.log(label + 'Type', Object.prototype.toString.call(obj).slice(8, -1));
     }
 
     function isNullOrEmpty(value) {
@@ -420,11 +420,41 @@ function render({ model, el }) {
         }
     }
 
+    function logObjectType(label, obj) {
+        console.log(label + ' Object:', obj);
+        console.log(label + ' Constructor:', obj.constructor.name);
+        console.log(label + ' Keys:', Object.keys(obj));
+        console.log(label + ' Type of keys:', Object.keys(obj).map(k => `${k}: ${typeof obj[k]}`));
+        console.log(label + 'Type', Object.prototype.toString.call(obj).slice(8, -1));
+    }
+
     function logAndThrowError(msg) {
         const error =
         console.error('Error Message:', error.message);
         console.error('Stack Trace:');
         console.error(error.stack.split('\n').join('\n'));
+    }
+
+    // converts a key to readable words by:
+    // 1. replacing the underscore with a space, and
+    // 2. capitalizing the first letter of each word
+    function makeKeyWords (key, series1_name, series2_name) {
+        key = key.replace("cohort1", series1_name);
+        key = key.replace("cohort2", series2_name);
+        return toLabel(key);
+    }
+
+    // converts keys to readable words by:
+    // 1. replacing the underscore with a space, and
+    // 2. capitalizing the first letter of each word
+        function makeKeysWords (keys, series1_name, series2_name) {
+        for (let i = 0; i < keys.length; i++) {
+            keys[i] = keys[i].replace("cohort1", series1_name);
+            keys[i] = keys[i].replace("cohort2", series2_name);
+        }
+        return keys.map(key => {
+            return toLabel(key);
+        });
     }
 
     function removeDuplicates(data, key) {
@@ -481,6 +511,7 @@ function render({ model, el }) {
 
     // <editor-fold desc="---------- DEFINE DATA ----------">
 
+    // Cohort1 and Cohort2 are not the cohort IDs, but are just 2 cohorts that we are comparing
     var cohort1_meta = model.get('_cohort1Metadata');
     var cohort1_stats = model.get('_cohort1Stats');
     var race_stats1 = model.get('_raceStats1');
@@ -520,11 +551,119 @@ function render({ model, el }) {
 
     // </editor-fold>
 
-    // <editor-fold desc="---------- VISUAL CONTROL FUNCTIONS ----------">
+    // <editor-fold desc="---------- VISUAL COMPONENTS ----------">
 
     function createTooltip() {
         return vis_container.append("div")
             .attr("class", "tooltip");
+    }
+
+    /**
+     * Renders a difference bar chart showing the comparison between two values
+     * @param {d3.Selection} container - D3 selection where the chart should be rendered
+     * @param {number} difference - The difference value to visualize
+     * @param {Object} options - Configuration options
+     * @param {number} options.width - Width of the chart in pixels
+     * @param {number} options.height - Height of the chart in pixels
+     * @param {number} [options.maxDiff=1] - Maximum absolute difference for the scale (default: 1)
+     * @param {string} options.positiveColor - Color for positive differences
+     * @param {string} options.negativeColor - Color for negative differences
+     * @param {Object} [options.tooltip] - Tooltip configuration (optional)
+     * @param {*} options.tooltip.dispatcher - D3 dispatcher for tooltip events
+     * @param {string|Function} options.tooltip.content - Tooltip content (string or function: (difference) => string)
+     * @param {number} [options.margin=5] - Margin around the bar in pixels (default: 5)
+     */
+    function DifferenceBar(container, difference, options) {
+        const {
+            width,
+            height,
+            maxDiff = 1,
+            positiveColor,
+            negativeColor,
+            tooltip,
+            margin = 5
+        } = options;
+
+        const diffValue = difference;
+        const absDiff = Math.abs(diffValue);
+
+        // Create scale for bar positioning
+        const barScale = d3.scaleLinear()
+            .domain([maxDiff, -maxDiff])
+            .range([margin, width - margin]);
+
+        const zeroX = barScale(0);
+        const innerY = margin;
+        const innerHeight = height - 2 * margin;
+
+        // Clear any existing chart content (but preserve table backgrounds/borders)
+        container.selectAll('g.diff-bar-chart').remove();
+
+        // Create SVG group with a class for future cleanup
+        const g = container.append('g')
+            .attr('class', 'diff-bar-chart');
+
+        // Draw zero line (x = 0 marker)
+        g.append("line")
+            .attr("x1", zeroX)
+            .attr("y1", 0)
+            .attr("x2", zeroX)
+            .attr("y2", height)
+            .attr("stroke", "grey")
+            .attr("stroke-width", 1)
+            .attr("stroke-dasharray", "3,3");
+
+        // Draw bar
+        const bar = g.append("rect")
+            .attr("x", Math.min(zeroX, barScale(diffValue)))
+            .attr("y", innerY)
+            .attr("width", Math.abs(barScale(diffValue) - zeroX))
+            .attr("height", innerHeight)
+            .attr("fill", diffValue < 0 ? negativeColor : positiveColor);
+
+        // Add tooltip handlers if provided
+        if (tooltip) {
+            const getContent = typeof tooltip.content === 'function'
+                ? tooltip.content
+                : () => tooltip.content;
+
+            bar.on("mouseover", function(event) {
+                const content = getContent(diffValue);
+                tooltip.dispatcher.call("show", null, { content, event });
+            })
+                .on("mouseout", function() {
+                    tooltip.dispatcher.call("hide");
+                });
+        }
+
+        // Add invisible hover rectangle for small/zero values
+        if (absDiff <= 0.001) {
+            const hoverWidth = Math.abs(barScale(0.01) - zeroX);
+
+            const hoverRect = g.append("rect")
+                .attr("x", zeroX - hoverWidth / 2)
+                .attr("y", innerY)
+                .attr("width", hoverWidth)
+                .attr("height", innerHeight)
+                .attr("fill", "transparent")
+                .attr("opacity", 0)
+                .style("cursor", "pointer");
+
+            // Add tooltip handlers to hover rect if provided
+            if (tooltip) {
+                const getContent = typeof tooltip.content === 'function'
+                    ? tooltip.content
+                    : () => tooltip.content;
+
+                hoverRect.on("mouseover", function(event) {
+                    const content = getContent(diffValue);
+                    tooltip.dispatcher.call("show", null, { content, event });
+                })
+                    .on("mouseout", function() {
+                        tooltip.dispatcher.call("hide");
+                    });
+            }
+        }
     }
 
     /*
@@ -1270,8 +1409,11 @@ function render({ model, el }) {
 
     // <editor-fold desc="---------- HIERARCHICAL TABLE FUNCTIONS ----------">
 
-    function HierarchyView(data, { width = 960, height = 720 } = {}) {
-        console.log('HierarchyView data = ', data);
+    function HierarchyView(data, { width = 960, height = 720, shortnames = [] } = {}){
+        // console.log('HierarchyView data = ', data);
+
+        if (isNullOrEmpty(shortnames))
+            shortnames = ['study', 'baseline'];
 
         // Layout constants
         const H1 = 180;           // Top section height
@@ -1281,6 +1423,8 @@ function render({ model, el }) {
         const cardPadding = 8;    // Padding between cards
         const minCardWidth = 150;
         const minCardHeight = 80;
+        const sectionGap = 8;     // Gap between sections
+        const separatorThickness = 3;  // Bold line thickness
 
         // State
         let centerCard = data.caller_node || null;
@@ -1297,32 +1441,135 @@ function render({ model, el }) {
         const middleLayer = svg.append("g").attr("class", "middle-layer");
         const topLayer = svg.append("g").attr("class", "top-layer");
         const bottomLayer = svg.append("g").attr("class", "bottom-layer");
+        const separatorLayer = svg.append("g").attr("class", "separator-layer");
 
-        // Create a single card
-        function createCard(parentGroup, x, y, cardWidth, cardHeight, item, isDraggable = true) {
+        // Helper function to calculate card height
+        function calculateCardHeight(include_keys) {
+            const padding = 16;
+            const fontSize = 11;
+            const rowGap = 4;
+            const headerLineSpacing = 18;
+            const separatorMargin = 6;
 
-            function getSingleCohortCardContent(d){
-                const heading = `<strong>Concept: ${d.concept_code}</strong><br>(${d.concept_name})<hr>`;
-                let msg = `(no difference)`;
-                if(series_name !== "")
-                    msg = `(higher in ${series_name})`;
-                return `${heading} Diff. in Prev: ${Math.abs(d.difference_in_prevalence).toFixed(prevalence_dp)}<br>${msg}`;
+            const separatorY = headerLineSpacing + separatorMargin;
+            const dataStartY = separatorY + separatorMargin;
+
+            // Calculate height based on number of keys
+            const numRows = include_keys.length;
+            const dataHeight = numRows * (fontSize + rowGap);
+
+            return padding + dataStartY + dataHeight + padding;
+        }
+
+        function setCohortCardContent(cardGroup, include_keys, d, cardWidth, cardHeight) {
+            // console.log('setCohortCardContent d = ', d);
+
+            const padding = 16;
+            const fontSize = 11;
+            const labelWidth = 120;
+            const columnGap = 10;
+            const rowGap = 4;
+            const headerLineSpacing = 18;
+            const separatorMargin = 6;
+
+            // Add header
+            const headerGroup = cardGroup.append('g')
+                .attr('transform', `translate(${padding}, ${padding})`);
+
+            headerGroup.append('text')
+                .attr('x', 0)
+                .attr('y', 0)
+                .attr('font-size', 11)
+                .attr('font-weight', 'bold')
+                .attr('fill', '#000')
+                .text(`${d.concept_name}`);
+
+            headerGroup.append('text')
+                .attr('x', 0)
+                .attr('y', headerLineSpacing)
+                .attr('font-size', 11)
+                .attr('fill', '#666')
+                .text(`(SNOMED Code: ${d.concept_code})`);
+
+            // Calculate separator position
+            const separatorY = headerLineSpacing + separatorMargin;
+
+            // Add separator line
+            headerGroup.append('line')
+                .attr('x1', 0)
+                .attr('y1', separatorY)
+                .attr('x2', cardWidth - 2 * padding)
+                .attr('y2', separatorY)
+                .attr('stroke', '#ddd')
+                .attr('stroke-width', 1);
+
+            // Position data rows right below the separator
+            const dataStartY = separatorY + separatorMargin;
+
+            // Add data rows
+            const dataGroup = cardGroup.append('g')
+                .attr('transform', `translate(${padding}, ${padding + dataStartY})`);
+
+            let currentY = 0;
+
+            include_keys.forEach((key) => {
+                const rowGroup = dataGroup.append('g')
+                    .attr('transform', `translate(0, ${currentY})`);
+
+                // Label (name)
+                rowGroup.append('text')
+                    .attr('x', 0)
+                    .attr('y', fontSize)
+                    .attr('font-size', fontSize)
+                    .attr('text-anchor', 'start')
+                    .attr('fill', '#000')
+                    .text(makeKeyWords(key, shortnames[0], shortnames[1]) + ':');
+
+                // Value
+                const value = d[key] !== undefined ? d[key] : '—';
+                rowGroup.append('text')
+                    .attr('x', labelWidth + columnGap)
+                    .attr('y', fontSize)
+                    .attr('font-size', fontSize)
+                    .attr('text-anchor', 'start')
+                    .attr('fill', '#000')
+                    .text(value);
+
+                currentY += fontSize + rowGap;
+            });
+        }
+
+        // Helper function to prepare item data and get keys
+        function prepareItemData(item) {
+            let keys = ['concept_code', 'concept_name'];
+            let cohort_ids = item['source_cohorts'];
+
+            // Add content based on mode
+            if (isSingleCohort()) {
+                keys = keys.concat(['count_in_cohort', 'prevalence']);
+                item['count_in_cohort'] = getCohortItemCount(item, cohort_ids[0]);
+                item['prevalence'] = getCohortItemPrevalence(item, cohort_ids[0]);
+            } else {
+                keys = keys.concat(['cohort1_count', 'cohort1_prevalence', 'difference_in_prevalence', 'cohort2_count', 'cohort2_prevalence']);
+                item['cohort1_count'] = getCohortItemCount(item, cohort_ids[0]);
+                item['cohort1_prevalence'] = getCohortItemPrevalence(item, cohort_ids[0]);
+                item['cohort2_count'] = getCohortItemCount(item, cohort_ids[1]);
+                item['cohort2_prevalence'] = getCohortItemPrevalence(item, cohort_ids[1]);
+                item['difference_in_prevalence'] = Math.abs(item['cohort1_prevalence'] - Math.abs(item['cohort2_prevalence']));
             }
 
-            function getCompareCohortsCardContent(d){
-                const heading = `<strong>Concept: ${d.concept_code}</strong><br>(${d.concept_name})<hr>`;
-                let msg = `(no difference)`;
-                if(series_name !== "")
-                    msg = `(higher in ${series_name})`;
-                return `${heading} Diff. in Prev: ${Math.abs(d.difference_in_prevalence).toFixed(prevalence_dp)}<br>${msg}`;
-            }
+            return keys;
+        }
 
+        // Updated createCard function - now accepts cardHeight as parameter
+        function createCard(parentGroup, x, y, cardWidth, cardHeight, item, keys, isDraggable = true) {
             const card = parentGroup.append("g")
                 .datum(item)
                 .attr("transform", `translate(${x},${y})`)
                 .attr("class", "card")
                 .style("cursor", isDraggable ? "grab" : "default");
 
+            // Card background
             card.append("rect")
                 .attr("width", cardWidth)
                 .attr("height", cardHeight)
@@ -1331,13 +1578,7 @@ function render({ model, el }) {
                 .attr("stroke", "#ddd")
                 .attr("stroke-width", 1);
 
-            card.append("text")
-                .attr("x", 16)
-                .attr("y", 32)
-                .attr("font-size", font_size)
-                .attr("font-weight", 'bold')
-                .attr("fill", "#000")
-                .text(isSingleCohort() ? getSingleCohortCardContent(item) : getCompareCohortsCardContent(item));
+            setCohortCardContent(card, keys, item, cardWidth, cardHeight);
 
             if (isDraggable) {
                 setupDragBehavior(card, item, cardWidth, cardHeight);
@@ -1413,12 +1654,37 @@ function render({ model, el }) {
             card.call(drag);
         }
 
-        // Check if a card is in the drop zone
+        // Check if a card is in the drop zone (now needs to be dynamic)
         function isInDropZone(absoluteY, cardHeight) {
-            const centerTop = H1 + pad;
-            const centerBottom = H1 + H2;
+            // We need to recalculate middle section position
+            const centerCardId = centerCard?.concept_id;
+            const parents = (data.parents || []).filter(p => p.concept_id !== centerCardId);
+
+            let middleTop = pad;
+            if (parents.length > 0) {
+                // Calculate top section height
+                const firstItem = parents[0];
+                const keys = prepareItemData(firstItem);
+                const cardHeight = calculateCardHeight(keys);
+                const cardsPerRow = Math.floor((width - 2 * pad + cardPadding) / (minCardWidth + cardPadding));
+                const actualCardsPerRow = Math.max(1, Math.min(cardsPerRow, parents.length));
+                const numRows = Math.ceil(parents.length / actualCardsPerRow);
+                const topHeight = numRows * cardHeight + (numRows - 1) * cardPadding;
+                middleTop += topHeight + 2 * sectionGap;
+            } else {
+                middleTop += 50 + 2 * sectionGap; // Empty section height
+            }
+
+            // Calculate middle section height
+            let middleHeight = 100; // Default for empty drop zone
+            if (centerCard) {
+                const keys = prepareItemData(centerCard);
+                middleHeight = calculateCardHeight(keys);
+            }
+
+            const middleBottom = middleTop + middleHeight;
             const cardCenter = absoluteY + cardHeight / 2;
-            return cardCenter >= centerTop && cardCenter <= centerBottom;
+            return cardCenter >= middleTop && cardCenter <= middleBottom;
         }
 
         // Extract x, y from transform attribute
@@ -1455,34 +1721,58 @@ function render({ model, el }) {
             }
         }
 
-        // Layout cards in a grid with wrapping
+        // Updated layoutCardsInGrid - calculates height once and returns total height used
         function layoutCardsInGrid(parentGroup, items, availableWidth, availableHeight, isDraggable = true) {
-            if (items.length === 0) return;
+
+            if (items.length === 0) {
+                // Show "No data to show" message
+                parentGroup.append("text")
+                    .attr("x", availableWidth / 2)
+                    .attr("y", 30)
+                    .attr("text-anchor", "middle")
+                    .attr("font-size", 14)
+                    .attr("fill", "#999")
+                    .text("No data to show");
+                return 50; // Return minimal height for empty section
+            }
+
+            // Prepare first item to determine keys and calculate height once
+            const firstItem = items[0];
+            const keys = prepareItemData(firstItem);
+            const cardHeight = calculateCardHeight(keys);
+
+            // Prepare remaining items
+            items.slice(1).forEach(item => prepareItemData(item));
 
             const cardsPerRow = Math.floor((availableWidth + cardPadding) / (minCardWidth + cardPadding));
             const actualCardsPerRow = Math.max(1, Math.min(cardsPerRow, items.length));
             const cardWidth = (availableWidth - (actualCardsPerRow - 1) * cardPadding) / actualCardsPerRow;
-
-            const numRows = Math.ceil(items.length / actualCardsPerRow);
-            const cardHeight = Math.max(minCardHeight, (availableHeight - (numRows - 1) * cardPadding) / numRows);
 
             items.forEach((item, i) => {
                 const row = Math.floor(i / actualCardsPerRow);
                 const col = i % actualCardsPerRow;
                 const x = col * (cardWidth + cardPadding);
                 const y = row * (cardHeight + cardPadding);
-                createCard(parentGroup, x, y, cardWidth, cardHeight, item, isDraggable);
+                createCard(parentGroup, x, y, cardWidth, cardHeight, item, keys, isDraggable);
             });
+
+            // Calculate and return total height used
+            const numRows = Math.ceil(items.length / actualCardsPerRow);
+            const totalHeight = numRows * cardHeight + (numRows - 1) * cardPadding;
+            return totalHeight;
         }
 
-        // Draw the middle section (drop zone or center card)
+        // Draw the middle section (drop zone or center card) and return its height
         function drawMiddleSection() {
-            const mid = middleLayer.append("g").attr("transform", `translate(${pad},${H1 + pad})`);
+            const mid = middleLayer.append("g").attr("transform", `translate(${pad},0)`);
             const centerCardWidth = width - 2 * pad;
-            const centerCardHeight = H2 - pad;
 
             if (centerCard) {
-                // Draw background indicator
+                // Prepare center card data and calculate actual height
+                const keys = prepareItemData(centerCard);
+                const centerCardHeight = calculateCardHeight(keys);
+
+                // Draw background indicator (same height as card)
                 mid.append("rect")
                     .attr("class", "drop-zone-indicator")
                     .attr("width", centerCardWidth)
@@ -1493,13 +1783,15 @@ function render({ model, el }) {
                     .attr("stroke-width", 1);
 
                 // Draw center card
-                createCard(mid, 0, 0, centerCardWidth, centerCardHeight, centerCard, false);
+                createCard(mid, 0, 0, centerCardWidth, centerCardHeight, centerCard, keys, false);
+                return centerCardHeight;
             } else {
                 // Draw empty drop zone
+                const emptyHeight = 100;
                 mid.append("rect")
                     .attr("class", "drop-zone-indicator")
                     .attr("width", centerCardWidth)
-                    .attr("height", centerCardHeight)
+                    .attr("height", emptyHeight)
                     .attr("rx", 8)
                     .attr("fill", "#f8f9fa")
                     .attr("stroke", "#ddd")
@@ -1507,36 +1799,63 @@ function render({ model, el }) {
 
                 mid.append("text")
                     .attr("x", centerCardWidth / 2)
-                    .attr("y", centerCardHeight / 2)
+                    .attr("y", emptyHeight / 2)
                     .attr("text-anchor", "middle")
                     .attr("font-size", 16)
                     .attr("fill", "#999")
                     .text("Drop a card here");
+                return emptyHeight;
             }
         }
 
-        // Redraw the entire view
+        // Redraw the entire view with dynamic positioning
         function redrawHierarchyView() {
             // Clear all layers
             topLayer.selectAll("*").remove();
             middleLayer.selectAll("*").remove();
             bottomLayer.selectAll("*").remove();
+            separatorLayer.selectAll("*").remove();
 
             // Filter out center card from parents and children
             const centerCardId = centerCard?.concept_id;
             const parents = (data.parents || []).filter(p => p.concept_id !== centerCardId);
             const children = (data.children || []).filter(c => c.concept_id !== centerCardId);
 
+            let currentY = pad;
+
             // Draw top section (parents)
-            const top = topLayer.append("g").attr("transform", `translate(${pad},${pad})`);
-            layoutCardsInGrid(top, parents, width - 2 * pad, H1 - pad, true);
+            const top = topLayer.append("g").attr("transform", `translate(${pad},${currentY})`);
+            const topHeight = layoutCardsInGrid(top, parents, width - 2 * pad, H1 - pad, true);
+            currentY += topHeight + sectionGap;
+
+            // Draw separator line between top and middle
+            separatorLayer.append("line")
+                .attr("x1", pad)
+                .attr("y1", currentY)
+                .attr("x2", width - pad)
+                .attr("y2", currentY)
+                .attr("stroke", "#333")
+                .attr("stroke-width", separatorThickness);
+            currentY += sectionGap;
 
             // Draw middle section (center card or drop zone)
-            drawMiddleSection();
+            middleLayer.attr("transform", `translate(0,${currentY})`);
+            const middleHeight = drawMiddleSection();
+            currentY += middleHeight + sectionGap;
+
+            // Draw separator line between middle and bottom
+            separatorLayer.append("line")
+                .attr("x1", pad)
+                .attr("y1", currentY)
+                .attr("x2", width - pad)
+                .attr("y2", currentY)
+                .attr("stroke", "#333")
+                .attr("stroke-width", separatorThickness);
+            currentY += sectionGap;
 
             // Draw bottom section (children)
-            const bottom = bottomLayer.append("g").attr("transform", `translate(${pad},${H1 + H2 + pad})`);
-            layoutCardsInGrid(bottom, children, width - 2 * pad, H3 - pad, true);
+            const bottom = bottomLayer.append("g").attr("transform", `translate(${pad},${currentY})`);
+            const bottomHeight = layoutCardsInGrid(bottom, children, width - 2 * pad, H3 - pad, true);
         }
 
         // Initial draw
@@ -1544,25 +1863,6 @@ function render({ model, el }) {
 
         return svg.node();
     }
-
-// Example usage:
-    /*
-    const svg_hier = HierarchyView(immediate_nodes_data, {
-        width: concept_hier_rect_bounds.width,
-        height: svgHeight
-    });
-    concept_hier_wrapper.node().appendChild(svg_hier);
-
-    // Listen to events
-    hierarchyViewDispatcher.on('cardDropped', function(eventData) {
-        console.log('Card dropped:', eventData.newCard);
-        console.log('Previous card:', eventData.previousCard);
-    });
-
-    hierarchyViewDispatcher.on('centerCardChanged', function(eventData) {
-        console.log('Center card changed:', eventData.centerCard);
-    });
-    */
 
     // </editor-fold>
 
@@ -1586,9 +1886,8 @@ function render({ model, el }) {
         let current_page = 0;
         let page_size = pageSize;
 
-        // TODO: Show counts as fractions of total for each series (check that series 2 exists as well)
         function getPrevDiffTooltipContent(d, series_name){
-            const heading = `<strong>Concept: ${d.concept_code}</strong><br>(${d.concept_name})<hr>`;
+            const heading = `<strong>${d.concept_name}</strong><br>(SNOMED Code: ${d.concept_code})<hr>`;
             let msg = `(no difference)`;
             if(series_name !== "")
                 msg = `(higher in ${series_name})`;
@@ -1597,21 +1896,21 @@ function render({ model, el }) {
 
         function getTooltipContent(d, colfield){
 
-            console.log('d = ', d);
-            console.log('colfield = ', colfield);
+            // console.log('d = ', d);
+            // console.log('colfield = ', colfield);
 
-            const heading = `<strong>Concept: ${d.concept_code}</strong><br>(${d.concept_name})<hr>`;
+            const heading = `<strong>${d.concept_name}</strong><br>(SNOMED Code: ${d.concept_code})<hr>`;
             // default to cohort 1, unless we know it is 2
             let cohort = 1;
             if (colfield.includes('2'))
                 cohort = 2;
 
-            console.log('cohort # = ', cohort);
-            console.log('total_counts = ', total_counts);
+            // console.log('cohort # = ', cohort);
+            // console.log('total_counts = ', total_counts);
 
             let t_count = total_counts[cohort - 1];
 
-            console.log('t_count = ', t_count);
+            // console.log('t_count = ', t_count);
 
             let count_key = 'count_in_cohort';
             if(!isSingleCohort())
@@ -1774,10 +2073,8 @@ function render({ model, el }) {
             throw new Error("ConceptsTable requires at least one cohort.");
         }
 
-        if (isNullOrEmpty(shortnames)) {
-            shortnames[0] = 'study'
-            shortnames[1] = 'baseline'
-        }
+        if (isNullOrEmpty(shortnames))
+            shortnames = ['study', 'baseline'];
 
         if (typeof dimensions !== "object" || dimensions === null) {
             throw new Error("ConceptsTable: 'dimensions' must be an object.");
@@ -1811,19 +2108,6 @@ function render({ model, el }) {
             .style("min-height", "0");
 
         // === HEADERS ===
-
-        // converts keys to readable words by:
-        // 1. replacing the underscore with a space, and
-        // 2. capitalizing the first letter of each word
-        function makeKeysWords (keys, series1_name, series2_name) {
-            for (let i = 0; i < keys.length; i++) {
-                keys[i] = keys[i].replace("cohort1", series1_name);
-                keys[i] = keys[i].replace("cohort2", series2_name);
-            }
-            return keys.map(key => {
-                return toLabel(key);
-            });
-        }
 
         const headers_text = makeKeysWords(Object.keys(table_data[0]), shortnames[0], shortnames[1]);
 
@@ -2118,7 +2402,7 @@ function render({ model, el }) {
         function renderTableCells(row) {
             const dafault_prevalence = 0;
 
-            console.log('renderTableCells row data', row.d);
+            // console.log('renderTableCells row data', row.d);
 
             // Add click handler to the row group
             row.attr("cursor", "pointer")
@@ -2210,8 +2494,8 @@ function render({ model, el }) {
                 } else {
 
                     function getHighestPrevalenceSeriesName(d) {
-                        console.log('d.cohort1_prevalence', d.cohort1_prevalence);
-                        console.log('d.cohort2_prevalence', d.cohort2_prevalence);
+                        // console.log('d.cohort1_prevalence', d.cohort1_prevalence);
+                        // console.log('d.cohort2_prevalence', d.cohort2_prevalence);
                         if (d.cohort1_prevalence > d.cohort2_prevalence) return 0;
                         if (d.cohort1_prevalence < d.cohort2_prevalence) return 1;
                         return 0;
@@ -2241,36 +2525,6 @@ function render({ model, el }) {
                                 });
                             break;
 
-                        case "bar":
-                            biasScale
-                                .domain([0, max_bias || 1])
-                                .range([margin, col.width - margin]);  // full available space inside cell
-
-                            cell.each(function (d) {
-                                g = d3.select(this);
-                                outerHeight = row_height;
-                                innerY = margin;
-                                innerH = outerHeight - 2 * margin;
-
-                                // Bar: left-aligned, scaled to bias value
-                                g.append("rect")
-                                    .attr("x", 0)
-                                    .attr("y", innerY)
-                                    .attr("width", biasScale(Math.abs(d.metrics['1'].prevalence)))
-                                    .attr("height", innerH)
-                                    .attr("fill", "#669999");
-
-                                // Text: show the bias value
-                                g.append("text")
-                                    .attr("x", 4)  // small left inset
-                                    .attr("y", outerHeight / 2 + 4)
-                                    .attr("font-size", font_size)
-                                    .attr("fill", "#000")
-                                    .text(Math.abs(d.metrics['1'].count !== null ? Math.abs(d.metrics['1'].count).toFixed(prevalence_dp) :
-                                        dafault_prevalence.toFixed(prevalence_dp)));
-                            });
-                            break;
-
                         case "compare_bars":
                             barScale
                                 .domain([max_diff || 1, -max_diff || -1])
@@ -2279,92 +2533,27 @@ function render({ model, el }) {
                             zeroX = barScale(0);
 
                             cell.each(function (d) {
-                                g = d3.select(this);
-                                outerHeight = row_height;
-                                innerY = 5;
-                                innerH = outerHeight - 2 * margin;
+                                const g = d3.select(this);
 
-                                // x = 0 marker
-                                g.append("line")
-                                    .attr("x1", zeroX)
-                                    .attr("y1", 0)
-                                    .attr("x2", zeroX)
-                                    .attr("y2", outerHeight)
-                                    .attr("stroke", "grey")
-                                    .attr("stroke-width", 1)
-                                    .attr("stroke-hierarray", "3,3");
-
-                                const diff_val = d.difference_in_prevalence;
-                                const abs_diff = Math.abs(diff_val);
-
-                                // Bar (only if difference is significant enough to be visible)
-                                // if (abs_diff >= 0.001) {
-                                    g.append("rect")
-                                        .attr("x", Math.min(zeroX, barScale(diff_val)))
-                                        .attr("y", innerY)
-                                        .attr("width", Math.abs(barScale(diff_val) - zeroX))
-                                        .attr("height", innerH)
-                                        .attr("fill", diff_val < 0 ? color(shortnames[1]) : color(shortnames[0]))
-                                        .on("mouseover", function (event, d) {
-                                            if(col.field.includes('prevalence')) {
-                                                const highest_prevalence = getHighestPrevalenceSeriesName(d);
-                                                let highest_series_name = "";
-                                                if (highest_prevalence >= 0)
-                                                    highest_series_name = shortnames[highest_prevalence];
-
-                                                tooltipDispatcher.call("show", null, {
-                                                    content: getPrevDiffTooltipContent(d, highest_series_name),
-                                                    event: event
-                                                });
-                                            }
-                                        })
-                                        .on("mouseout", function () {
-                                            tooltipDispatcher.call("hide");
-                                        });
-                                // }
-
-                                // Invisible hover rectangle for small/zero values
-                                if (abs_diff <= 0.001) {
-                                    const hover_width = Math.abs(0.01 - barScale(0));
-                                    g.append("rect")
-                                        .attr("x", zeroX - hover_width/2)
-                                        .attr("y", innerY)
-                                        .attr("width", hover_width)
-                                        .attr("height", innerH)
-                                        .attr("fill", "transparent")
-                                        .attr("opacity", 0)
-                                        .style("cursor", "pointer")
-                                        .on("mouseover", function (event, d) {
+                                DifferenceBar(g, d.difference_in_prevalence, {
+                                    width: col.width,
+                                    height: row_height,
+                                    maxDiff: max_diff,
+                                    positiveColor: color(shortnames[0]),
+                                    negativeColor: color(shortnames[1]),
+                                    tooltip: col.field.includes('prevalence') ? {
+                                        dispatcher: tooltipDispatcher,
+                                        content: (diff) => {
                                             const highest_prevalence = getHighestPrevalenceSeriesName(d);
                                             let highest_series_name = "";
-                                            if(highest_prevalence >= 0)
+                                            if (highest_prevalence >= 0) {
                                                 highest_series_name = shortnames[highest_prevalence];
-
-                                            tooltipDispatcher.call("show", null, {
-                                                content: getPrevDiffTooltipContent(d, highest_series_name),
-                                                event: event
-                                            });
-                                        })
-                                        .on("mouseout", function () {
-                                            tooltipDispatcher.call("hide");
-                                        });
-                                }
-
-                                // Text label - positioned based on value sign
-                                const textX = d.difference_in_prevalence >= 0 ?
-                                    Math.min(zeroX, barScale(d.difference_in_prevalence)) - 5 : // Left of positive bars
-                                    Math.max(zeroX, barScale(d.difference_in_prevalence)) + 5;  // Right of negative bars
-
-                                const textAnchor = d.difference_in_prevalence >= 0 ? "end" : "start";
-
-                                // g.append("text")
-                                //     .attr("x", textX)
-                                //     .attr("y", row_height / 2 + 4)
-                                //     .attr("text-anchor", textAnchor)
-                                //     .attr("font-size", font_size)
-                                //     .text(d.difference_in_prevalence !== null ?
-                                //         Math.abs(d.difference_in_prevalence.toFixed(prevalence_dp)) :
-                                //         dafault_prevalence.toFixed(prevalence_dp));
+                                            }
+                                            return getPrevDiffTooltipContent(d, highest_series_name);
+                                        }
+                                    } : undefined,
+                                    margin: margin
+                                });
                             });
                             break;
 
@@ -2416,9 +2605,7 @@ function render({ model, el }) {
                     }
                 );
 
-                console.log("Received parent and child nodes data:", immediate_nodes_data);concept_hier_col.innerHTML = '';
-
-                // TODO: Consolidate repeated code
+                // console.log("Received parent and child nodes data:", immediate_nodes_data);concept_hier_col.innerHTML = '';
 
                 concept_hier_col.innerHTML = '';
 
@@ -2465,7 +2652,8 @@ function render({ model, el }) {
 
                     const svg_hier = HierarchyView(immediate_nodes_data, {
                         width: concept_hier_rect_bounds.width,
-                        height: svgHeight
+                        height: svgHeight,
+                        shortnames: [cohort1_shortname, cohort2_shortname]
                     });
                     concept_hier_wrapper.node().appendChild(svg_hier);
                 }
@@ -2485,14 +2673,13 @@ function render({ model, el }) {
 
             } catch (error) {
                 if (error.message === 'Request cancelled') {
-                    console.log('Immediate nodes request was cancelled');
+                    // console.log('Immediate nodes request was cancelled');
                     // Deselect the row when cancelled
                     // Show default message for cancelled requests
                     showNoDataMessage();
                 } else {
                     console.error("Error fetching immediate nodes:", error);
 
-                    // TODO: use correct container
                     // Show error message in the panel
                     d3.select(concept_hier_col.node()).selectAll('*').remove();
                     d3.select(concept_hier_col.node())
@@ -2508,7 +2695,7 @@ function render({ model, el }) {
         function updateTableBody() {
             const page_data = getCurrentPageData();
 
-            console.log('page_data = ', page_data)
+            // console.log('page_data = ', page_data)
 
             const rows = rows_g.selectAll(".row")
                 .data(page_data, d => d.concept_code);
