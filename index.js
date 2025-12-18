@@ -278,12 +278,11 @@ function render({ model, el }) {
     // handles the concepts table
     const conceptsTableDispatcher =
         d3.dispatch('select-row', 'filter', 'sort', 'change-dp', 'column-resize', 'view-pct');
+
+    // <editor-fold desc="---------- TOOLTIP DISPATCHER ----------">
+
     // handles all tooltips
     const tooltipDispatcher = d3.dispatch("show", "hide");
-    // handles conditions drag bar
-    const conceptsDragbarDispatcher = d3.dispatch('dragstart', 'drag', 'dragend', 'toggle');
-    // handles hierarchy view events
-    const hierarchyViewDispatcher = d3.dispatch('cardDropped', 'centerCardChanged');
 
     tooltipDispatcher.on("show", function({ content, event }) {
         const containerRect = vis_container.node().getBoundingClientRect();
@@ -361,6 +360,74 @@ function render({ model, el }) {
     tooltipDispatcher.on("hide", function() {
         d3.selectAll(".tooltip").remove();
     });
+
+    // </editor-fold>
+
+    // handles conditions drag bar
+    const conceptsDragbarDispatcher = d3.dispatch('dragstart', 'drag', 'dragend', 'toggle');
+
+
+    // <editor-fold desc="---------- HIERARCHY VIEW DISPATCHER ----------">
+
+    // Assuming you already have this:
+    const hierarchyViewDispatcher = d3.dispatch('dragstart', 'drag', 'dragend', 'centerCardChanged');
+
+// Setup auto-scroll handler on the container
+    let autoScrollInterval = null;
+
+    hierarchyViewDispatcher.on('dragstart', () => {
+        // Clear any existing interval when drag starts
+        if (autoScrollInterval) {
+            clearInterval(autoScrollInterval);
+            autoScrollInterval = null;
+        }
+    });
+
+    hierarchyViewDispatcher.on('drag', (eventData) => {
+        // Get the actual scrollable element (the inner div, not the outer container)
+        const scrollContainer = concept_hier_col.node().querySelector('div[style*="overflow: auto"]');
+
+        if (!scrollContainer) return; // Safety check
+
+        const rect = scrollContainer.getBoundingClientRect();
+        const scrollThreshold = 80;
+        const scrollSpeed = 15;
+        const mouseY = eventData.clientY;
+
+        // Calculate mouse position RELATIVE to container
+        const relativeY = mouseY - rect.top;
+        const containerHeight = rect.height;
+
+        // Clear any existing interval
+        if (autoScrollInterval) {
+            clearInterval(autoScrollInterval);
+            autoScrollInterval = null;
+        }
+
+        // Check if mouse is near top or bottom of container (using relative position)
+        if (relativeY < scrollThreshold && scrollContainer.scrollTop > 0) {
+            // Near top - scroll up
+            autoScrollInterval = setInterval(() => {
+                scrollContainer.scrollTop = Math.max(0, scrollContainer.scrollTop - scrollSpeed);
+            }, 16);
+        } else if (relativeY > containerHeight - scrollThreshold) {
+            // Near bottom - scroll down
+            autoScrollInterval = setInterval(() => {
+                const maxScroll = scrollContainer.scrollHeight - scrollContainer.clientHeight;
+                scrollContainer.scrollTop = Math.min(maxScroll, scrollContainer.scrollTop + scrollSpeed);
+            }, 16);
+        }
+    });
+
+    hierarchyViewDispatcher.on('dragend', () => {
+        // Clear auto-scroll when drag ends
+        if (autoScrollInterval) {
+            clearInterval(autoScrollInterval);
+            autoScrollInterval = null;
+        }
+    });
+
+    // </editor-fold>
 
     // </editor-fold>
 
@@ -1409,11 +1476,14 @@ function render({ model, el }) {
 
     // <editor-fold desc="---------- HIERARCHICAL TABLE FUNCTIONS ----------">
 
-    function HierarchyView(data, { width = 960, height = 720, shortnames = [] } = {}){
+    function HierarchyView(data, { width = 960, height = 720, shortnames = [], dispatcher = null } = {}){
         // console.log('HierarchyView data = ', data);
 
         if (isNullOrEmpty(shortnames))
             shortnames = ['study', 'baseline'];
+
+        // Use provided dispatcher or create a default one
+        const hierarchyDispatcher = dispatcher || d3.dispatch('dragstart', 'drag', 'dragend');
 
         // Layout constants
         const H1 = 180;           // Top section height
@@ -1612,6 +1682,14 @@ function render({ model, el }) {
                     offsetY = event.y;
 
                     highlightDropZone(true);
+
+                    // Emit drag start event
+                    if (event.sourceEvent) {
+                        hierarchyDispatcher.call('dragstart', null, {
+                            clientX: event.sourceEvent.clientX,
+                            clientY: event.sourceEvent.clientY
+                        });
+                    }
                 })
                 .on("drag", function(event) {
                     const newX = startX + event.x - offsetX;
@@ -1622,8 +1700,19 @@ function render({ model, el }) {
                     const absoluteY = newY + parentTransform.y;
                     const isOverDropZone = isInDropZone(absoluteY, cardHeight);
                     highlightDropZone(true, isOverDropZone);
+
+                    // Emit drag event for container to handle scrolling
+                    if (event.sourceEvent) {
+                        hierarchyDispatcher.call('drag', null, {
+                            clientX: event.sourceEvent.clientX,
+                            clientY: event.sourceEvent.clientY
+                        });
+                    }
                 })
                 .on("end", async function(event) {
+
+                    // Emit drag end event
+                    hierarchyDispatcher.call('dragend', null, {});
 
                     // Reset visual feedback
                     card.style("cursor", "grab");
@@ -1634,8 +1723,8 @@ function render({ model, el }) {
                     const absoluteY = finalY + parentTransform.y;
 
                     if (isInDropZone(absoluteY, cardHeight)) {
-                        console.log('setupDragBehavior old item = ', centerCard);
-                        console.log('setupDragBehavior new item = ', item);
+                        // console.log('setupDragBehavior old item = ', centerCard);
+                        // console.log('setupDragBehavior new item = ', item);
 
                         // Cancel any pending requests when selection changes
                         requestManager.cancelAll();
@@ -2689,7 +2778,8 @@ function render({ model, el }) {
                     const svg_hier = HierarchyView(immediate_nodes_data, {
                         width: concept_hier_rect_bounds.width,
                         height: svgHeight,
-                        shortnames: [cohort1_shortname, cohort2_shortname]
+                        shortnames: [cohort1_shortname, cohort2_shortname],
+                        dispatcher: hierarchyViewDispatcher
                     });
                     concept_hier_wrapper.node().appendChild(svg_hier);
                 }
@@ -2903,7 +2993,7 @@ function render({ model, el }) {
     const concepts_tables_row = concepts_col.append('div').attr('class', 'row-container concepts-tables-row');
     const concepts_table_col = concepts_tables_row.append('div').attr('class', 'col-container col-resizable');
     const dragbar_col = concepts_tables_row.append('div').attr('class', 'drag-bar');
-    const concept_hier_col = concepts_tables_row.append('div').attr('class', 'col-container col-collapsed');
+    const concept_hier_col = concepts_tables_row.append('div').attr('class', 'col-container');
 
     // Add resizing functionality to the structure you created
     const conceptsResizablePanel = MakeDragBar({
