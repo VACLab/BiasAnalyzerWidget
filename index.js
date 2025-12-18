@@ -1428,6 +1428,7 @@ function render({ model, el }) {
 
         // State
         let centerCard = data.caller_node || null;
+        let currentData = data; // Store current data reference
 
         // Create SVG root
         const svg = d3.create("svg")
@@ -1589,7 +1590,8 @@ function render({ model, el }) {
 
         // Setup drag-and-drop behavior
         function setupDragBehavior(card, item, cardWidth, cardHeight) {
-            let startX, startY, originalTransform, parentTransform;
+
+            let startX, startY, originalTransform, parentTransform, offsetX, offsetY;
 
             const drag = d3.drag()
                 .on("start", function(event) {
@@ -1605,11 +1607,15 @@ function render({ model, el }) {
                     originalTransform = d3.select(this).attr("transform");
                     parentTransform = { x: parentX, y: parentY };
 
+                    // Calculate offset between mouse position and card's top-left corner
+                    offsetX = event.x;
+                    offsetY = event.y;
+
                     highlightDropZone(true);
                 })
                 .on("drag", function(event) {
-                    const newX = startX + event.x;
-                    const newY = startY + event.y;
+                    const newX = startX + event.x - offsetX;
+                    const newY = startY + event.y - offsetY;
                     d3.select(this).attr("transform", `translate(${newX},${newY})`);
 
                     // Check if hovering over drop zone
@@ -1617,29 +1623,60 @@ function render({ model, el }) {
                     const isOverDropZone = isInDropZone(absoluteY, cardHeight);
                     highlightDropZone(true, isOverDropZone);
                 })
-                .on("end", function(event) {
+                .on("end", async function(event) {
+
                     // Reset visual feedback
                     card.style("cursor", "grab");
                     card.select("rect").attr("stroke", "#ddd").attr("stroke-width", 1);
 
-                    const finalX = startX + event.x;
-                    const finalY = startY + event.y;
+                    const finalX = startX + event.x - offsetX;
+                    const finalY = startY + event.y - offsetY;
                     const absoluteY = finalY + parentTransform.y;
 
                     if (isInDropZone(absoluteY, cardHeight)) {
-                        // Drop successful - update center card
-                        const previousCard = centerCard;
-                        centerCard = item;
+                        console.log('setupDragBehavior old item = ', centerCard);
+                        console.log('setupDragBehavior new item = ', item);
 
-                        hierarchyViewDispatcher.call('cardDropped', null, {
-                            newCard: item,
-                            previousCard: previousCard
-                        });
-                        hierarchyViewDispatcher.call('centerCardChanged', null, {
-                            centerCard: item
-                        });
+                        // Cancel any pending requests when selection changes
+                        requestManager.cancelAll();
 
-                        redrawHierarchyView();
+                        try {
+                            const immediate_nodes_data = await requestManager.request(
+                                "get_immediate_nodes",
+                                {
+                                    caller_node_id: item.concept_id,
+                                    parent_ids: item.parent_ids
+                                },
+                                {
+                                    statusMessage: "Loading parent and child nodes...",
+                                    progressContainer: concept_hier_col.node(),
+                                    showProgress: true
+                                }
+                            );
+
+                            // Update the current data with new data
+                            currentData = immediate_nodes_data;
+                            centerCard = immediate_nodes_data.caller_node || item;
+
+                            // Redraw with new data
+                            redrawHierarchyView();
+
+                        } catch (error) {
+                            if (error.message === 'Request cancelled') {
+                                // console.log('Immediate nodes request was cancelled');
+                            } else {
+                                console.error("Error fetching immediate nodes:", error);
+
+                                // Show error message in the panel
+                                d3.select(concept_hier_col.node()).selectAll('*').remove();
+                                d3.select(concept_hier_col.node())
+                                    .append('p')
+                                    .style('padding', '8px')
+                                    .style('color', '#f44336')
+                                    .style('font-size', '12px')
+                                    .text(`Error: ${error.message || 'Failed to fetch immediate nodes'}`);
+                            }
+                        }
                     } else {
                         // Return to original position
                         d3.select(this)
@@ -1656,9 +1693,9 @@ function render({ model, el }) {
 
         // Check if a card is in the drop zone (now needs to be dynamic)
         function isInDropZone(absoluteY, cardHeight) {
-            // We need to recalculate middle section position
+            // Use currentData instead of data
             const centerCardId = centerCard?.concept_id;
-            const parents = (data.parents || []).filter(p => p.concept_id !== centerCardId);
+            const parents = (currentData.parents || []).filter(p => p.concept_id !== centerCardId);
 
             let middleTop = pad;
             if (parents.length > 0) {
@@ -1816,10 +1853,10 @@ function render({ model, el }) {
             bottomLayer.selectAll("*").remove();
             separatorLayer.selectAll("*").remove();
 
-            // Filter out center card from parents and children
+            // Use currentData instead of data
             const centerCardId = centerCard?.concept_id;
-            const parents = (data.parents || []).filter(p => p.concept_id !== centerCardId);
-            const children = (data.children || []).filter(c => c.concept_id !== centerCardId);
+            const parents = (currentData.parents || []).filter(p => p.concept_id !== centerCardId);
+            const children = (currentData.children || []).filter(c => c.concept_id !== centerCardId);
 
             let currentY = pad;
 
@@ -2619,7 +2656,6 @@ function render({ model, el }) {
                     .style('box-sizing', 'border-box');
 
                 // Function to create/update the SVG
-                // TODO: Move this to the hierarchy viewer and call it from here
                 function updateHierarchyView() {
                     // Clear existing content
                     concept_hier_wrapper.node().innerHTML = '';
