@@ -1472,7 +1472,7 @@ function render({ model, el }) {
 
     // <editor-fold desc="---------- HIERARCHICAL TABLE FUNCTIONS ----------">
 
-    function HierarchyView(data, { width = 960, height = 720, shortnames = [] } = {}){
+    function HierarchyView(data, { width = 960, height = 720, shortnames = [], dispatcher = null } = {}){
         // console.log('HierarchyView data = ', data);
 
         if (isNullOrEmpty(shortnames))
@@ -1488,6 +1488,7 @@ function render({ model, el }) {
         const minCardHeight = 80;
         const sectionGap = 8;     // Gap between sections
         const separatorThickness = 3;  // Bold line thickness
+        const labelHeight = 20;   // Height for section labels
 
         // State
         let centerCard = data.caller_node || null;
@@ -1725,8 +1726,8 @@ function render({ model, el }) {
                     highlightDropZone(true);
 
                     // Emit drag start event
-                    if (event.sourceEvent) {
-                        hierarchyViewDispatcher.call('dragstart', null, {
+                    if (event.sourceEvent && dispatcher) {
+                        dispatcher.call('dragstart', null, {
                             clientX: event.sourceEvent.clientX,
                             clientY: event.sourceEvent.clientY
                         });
@@ -1743,8 +1744,8 @@ function render({ model, el }) {
                     highlightDropZone(true, isOverDropZone);
 
                     // Emit drag event for container to handle scrolling
-                    if (event.sourceEvent) {
-                        hierarchyViewDispatcher.call('drag', null, {
+                    if (event.sourceEvent && dispatcher) {
+                        dispatcher.call('drag', null, {
                             clientX: event.sourceEvent.clientX,
                             clientY: event.sourceEvent.clientY
                         });
@@ -1753,7 +1754,9 @@ function render({ model, el }) {
                 .on("end", async function(event) {
 
                     // Emit drag end event
-                    hierarchyViewDispatcher.call('dragend', null, {});
+                    if (dispatcher) {
+                        dispatcher.call('dragend', null, {});
+                    }
 
                     // Reset visual feedback
                     card.style("cursor", "grab");
@@ -1827,7 +1830,8 @@ function render({ model, el }) {
             const centerCardId = centerCard?.concept_id;
             const parents = (currentData.parents || []).filter(p => p.concept_id !== centerCardId);
 
-            let middleTop = pad;
+            let middleTop = pad + labelHeight; // Account for "PARENTS" label
+
             if (parents.length > 0) {
                 // Calculate top section height
                 const firstItem = parents[0];
@@ -1841,6 +1845,9 @@ function render({ model, el }) {
             } else {
                 middleTop += 50 + 2 * sectionGap; // Empty section height
             }
+
+            // Account for "CURRENT CONCEPT" label
+            middleTop += labelHeight;
 
             // Calculate middle section height
             let middleHeight = 100; // Default for empty drop zone
@@ -1990,6 +1997,17 @@ function render({ model, el }) {
 
             let currentY = pad;
 
+            // Add "PARENTS" label
+            topLayer.append("text")
+                .attr("x", pad)
+                .attr("y", currentY + 12)
+                .attr("font-size", 12)
+                .attr("font-weight", "bold")
+                .attr("fill", "#333")
+                .text("PARENTS");
+
+            currentY += labelHeight;
+
             // Draw top section (parents)
             const top = topLayer.append("g").attr("transform", `translate(${pad},${currentY})`);
             const topHeight = layoutCardsInGrid(top, parents, width - 2 * pad, H1 - pad, true);
@@ -2005,6 +2023,17 @@ function render({ model, el }) {
                 .attr("stroke-width", separatorThickness);
             currentY += sectionGap;
 
+            // Add "CURRENT CONCEPT" label (in separatorLayer so it doesn't get transformed)
+            separatorLayer.append("text")
+                .attr("x", pad)
+                .attr("y", currentY + 12)
+                .attr("font-size", 12)
+                .attr("font-weight", "bold")
+                .attr("fill", "#333")
+                .text("CURRENT CONCEPT");
+
+            currentY += labelHeight;
+
             // Draw middle section (center card or drop zone)
             middleLayer.attr("transform", `translate(0,${currentY})`);
             const middleHeight = drawMiddleSection();
@@ -2019,6 +2048,17 @@ function render({ model, el }) {
                 .attr("stroke", "#333")
                 .attr("stroke-width", separatorThickness);
             currentY += sectionGap;
+
+            // Add "CHILDREN" label
+            bottomLayer.append("text")
+                .attr("x", pad)
+                .attr("y", currentY + 12)
+                .attr("font-size", 12)
+                .attr("font-weight", "bold")
+                .attr("fill", "#333")
+                .text("CHILDREN");
+
+            currentY += labelHeight;
 
             // Draw bottom section (children)
             const bottom = bottomLayer.append("g").attr("transform", `translate(${pad},${currentY})`);
@@ -2819,7 +2859,8 @@ function render({ model, el }) {
                     const svg_hier = HierarchyView(immediate_nodes_data, {
                         width: concept_hier_rect_bounds.width,
                         height: svgHeight,
-                        shortnames: [cohort1_shortname, cohort2_shortname]
+                        shortnames: [cohort1_shortname, cohort2_shortname],
+                        dispatcher: hierarchyViewDispatcher
                     });
                     concept_hier_wrapper.node().appendChild(svg_hier);
                 }
