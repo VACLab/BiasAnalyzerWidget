@@ -11,7 +11,7 @@ import * as Inputs from "https://esm.sh/@observablehq/inputs";
 
 function render({ model, el }) {
 
-    const font_size = '12px';
+    const font_size = '11px';
 
     // <editor-fold desc="---------- REQUEST MANAGER ----------">
 
@@ -369,7 +369,6 @@ function render({ model, el }) {
 
     // <editor-fold desc="---------- HIERARCHY VIEW DISPATCHER ----------">
 
-    // Assuming you already have this:
     const hierarchyViewDispatcher = d3.dispatch('dragstart', 'drag', 'dragend', 'centerCardChanged');
 
 // Setup auto-scroll handler on the container
@@ -384,34 +383,31 @@ function render({ model, el }) {
     });
 
     hierarchyViewDispatcher.on('drag', (eventData) => {
-        // Get the actual scrollable element (the inner div, not the outer container)
+        // Remove this line:
+        // console.log('Container received drag event:', eventData);
+
         const scrollContainer = concept_hier_col.node().querySelector('div[style*="overflow: auto"]');
 
-        if (!scrollContainer) return; // Safety check
+        if (!scrollContainer) return;
 
         const rect = scrollContainer.getBoundingClientRect();
         const scrollThreshold = 80;
         const scrollSpeed = 15;
         const mouseY = eventData.clientY;
 
-        // Calculate mouse position RELATIVE to container
         const relativeY = mouseY - rect.top;
         const containerHeight = rect.height;
 
-        // Clear any existing interval
         if (autoScrollInterval) {
             clearInterval(autoScrollInterval);
             autoScrollInterval = null;
         }
 
-        // Check if mouse is near top or bottom of container (using relative position)
         if (relativeY < scrollThreshold && scrollContainer.scrollTop > 0) {
-            // Near top - scroll up
             autoScrollInterval = setInterval(() => {
                 scrollContainer.scrollTop = Math.max(0, scrollContainer.scrollTop - scrollSpeed);
             }, 16);
         } else if (relativeY > containerHeight - scrollThreshold) {
-            // Near bottom - scroll down
             autoScrollInterval = setInterval(() => {
                 const maxScroll = scrollContainer.scrollHeight - scrollContainer.clientHeight;
                 scrollContainer.scrollTop = Math.min(maxScroll, scrollContainer.scrollTop + scrollSpeed);
@@ -1476,14 +1472,11 @@ function render({ model, el }) {
 
     // <editor-fold desc="---------- HIERARCHICAL TABLE FUNCTIONS ----------">
 
-    function HierarchyView(data, { width = 960, height = 720, shortnames = [], dispatcher = null } = {}){
+    function HierarchyView(data, { width = 960, height = 720, shortnames = [] } = {}){
         // console.log('HierarchyView data = ', data);
 
         if (isNullOrEmpty(shortnames))
             shortnames = ['study', 'baseline'];
-
-        // Use provided dispatcher or create a default one
-        const hierarchyDispatcher = dispatcher || d3.dispatch('dragstart', 'drag', 'dragend');
 
         // Layout constants
         const H1 = 180;           // Top section height
@@ -1491,7 +1484,7 @@ function render({ model, el }) {
         const H3 = height - H1 - H2;  // Bottom section height
         const pad = 12;           // Padding
         const cardPadding = 8;    // Padding between cards
-        const minCardWidth = 150;
+        const minCardWidth = 300;
         const minCardHeight = 80;
         const sectionGap = 8;     // Gap between sections
         const separatorThickness = 3;  // Bold line thickness
@@ -1521,13 +1514,13 @@ function render({ model, el }) {
             const rowGap = 4;
             const headerLineSpacing = 18;
             const separatorMargin = 6;
+            const headerExtraLine = 18; // Space for potential second line in header
 
-            const separatorY = headerLineSpacing + separatorMargin;
+            const separatorY = headerLineSpacing + headerExtraLine + separatorMargin;
             const dataStartY = separatorY + separatorMargin;
 
-            // Calculate height based on number of keys
-            const numRows = include_keys.length;
-            const dataHeight = numRows * (fontSize + rowGap);
+            // Calculate height based on number of keys (no extra lines needed in body now)
+            const dataHeight = include_keys.length * (fontSize + rowGap);
 
             return padding + dataStartY + dataHeight + padding;
         }
@@ -1542,34 +1535,82 @@ function render({ model, el }) {
             const rowGap = 4;
             const headerLineSpacing = 18;
             const separatorMargin = 6;
+            const headerWidth = cardWidth - 2 * padding;
 
             // Add header
             const headerGroup = cardGroup.append('g')
                 .attr('transform', `translate(${padding}, ${padding})`);
 
+            // Wrap concept_name in header to 2 lines if necessary
+            const conceptName = d.concept_name || '';
+            const maxCharsPerLine = Math.floor(headerWidth / 6); // Approximate chars that fit
+
+            let line1 = '';
+            let line2 = '';
+
+            if (conceptName.length > maxCharsPerLine) {
+                // Split into two lines at word boundaries
+                const words = conceptName.split(' ');
+                let currentLine = 1;
+
+                words.forEach(word => {
+                    const testLine = currentLine === 1 ?
+                        (line1 + (line1 ? ' ' : '') + word) :
+                        (line2 + (line2 ? ' ' : '') + word);
+
+                    if (testLine.length <= maxCharsPerLine || (currentLine === 1 && !line1) || (currentLine === 2 && !line2)) {
+                        if (currentLine === 1) {
+                            line1 = testLine;
+                        } else {
+                            line2 = testLine;
+                        }
+                    } else {
+                        currentLine = 2;
+                        line2 = word;
+                    }
+                });
+            } else {
+                line1 = conceptName;
+            }
+
+            // First line of concept name
             headerGroup.append('text')
                 .attr('x', 0)
                 .attr('y', 0)
                 .attr('font-size', 11)
                 .attr('font-weight', 'bold')
                 .attr('fill', '#000')
-                .text(`${d.concept_name}`);
+                .text(line1);
 
+            // Second line of concept name (if needed)
+            let currentHeaderY = 0;
+            if (line2) {
+                headerGroup.append('text')
+                    .attr('x', 0)
+                    .attr('y', headerLineSpacing)
+                    .attr('font-size', 11)
+                    .attr('font-weight', 'bold')
+                    .attr('fill', '#000')
+                    .text(line2);
+                currentHeaderY = headerLineSpacing;
+            }
+
+            // SNOMED code line
             headerGroup.append('text')
                 .attr('x', 0)
-                .attr('y', headerLineSpacing)
+                .attr('y', currentHeaderY + headerLineSpacing)
                 .attr('font-size', 11)
                 .attr('fill', '#666')
                 .text(`(SNOMED Code: ${d.concept_code})`);
 
-            // Calculate separator position
-            const separatorY = headerLineSpacing + separatorMargin;
+            // Calculate separator position (accounting for wrapped header)
+            const separatorY = currentHeaderY + headerLineSpacing + separatorMargin;
 
             // Add separator line
             headerGroup.append('line')
                 .attr('x1', 0)
                 .attr('y1', separatorY)
-                .attr('x2', cardWidth - 2 * padding)
+                .attr('x2', headerWidth)
                 .attr('y2', separatorY)
                 .attr('stroke', '#ddd')
                 .attr('stroke-width', 1);
@@ -1596,7 +1637,7 @@ function render({ model, el }) {
                     .attr('fill', '#000')
                     .text(makeKeyWords(key, shortnames[0], shortnames[1]) + ':');
 
-                // Value
+                // Value (no special handling needed anymore)
                 const value = d[key] !== undefined ? d[key] : '—';
                 rowGroup.append('text')
                     .attr('x', labelWidth + columnGap)
@@ -1612,7 +1653,7 @@ function render({ model, el }) {
 
         // Helper function to prepare item data and get keys
         function prepareItemData(item) {
-            let keys = ['concept_code', 'concept_name'];
+            let keys = []; // Remove concept_code and concept_name from body
             let cohort_ids = item['source_cohorts'];
 
             // Add content based on mode
@@ -1685,7 +1726,7 @@ function render({ model, el }) {
 
                     // Emit drag start event
                     if (event.sourceEvent) {
-                        hierarchyDispatcher.call('dragstart', null, {
+                        hierarchyViewDispatcher.call('dragstart', null, {
                             clientX: event.sourceEvent.clientX,
                             clientY: event.sourceEvent.clientY
                         });
@@ -1703,7 +1744,7 @@ function render({ model, el }) {
 
                     // Emit drag event for container to handle scrolling
                     if (event.sourceEvent) {
-                        hierarchyDispatcher.call('drag', null, {
+                        hierarchyViewDispatcher.call('drag', null, {
                             clientX: event.sourceEvent.clientX,
                             clientY: event.sourceEvent.clientY
                         });
@@ -1712,7 +1753,7 @@ function render({ model, el }) {
                 .on("end", async function(event) {
 
                     // Emit drag end event
-                    hierarchyDispatcher.call('dragend', null, {});
+                    hierarchyViewDispatcher.call('dragend', null, {});
 
                     // Reset visual feedback
                     card.style("cursor", "grab");
@@ -2778,8 +2819,7 @@ function render({ model, el }) {
                     const svg_hier = HierarchyView(immediate_nodes_data, {
                         width: concept_hier_rect_bounds.width,
                         height: svgHeight,
-                        shortnames: [cohort1_shortname, cohort2_shortname],
-                        dispatcher: hierarchyViewDispatcher
+                        shortnames: [cohort1_shortname, cohort2_shortname]
                     });
                     concept_hier_wrapper.node().appendChild(svg_hier);
                 }
