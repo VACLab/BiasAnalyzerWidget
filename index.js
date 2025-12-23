@@ -12,6 +12,7 @@ import * as Inputs from "https://esm.sh/@observablehq/inputs";
 function render({ model, el }) {
 
     const font_size = '11px';
+    const default_prevalence_dp = 3;
 
     // <editor-fold desc="---------- REQUEST MANAGER ----------">
 
@@ -277,7 +278,9 @@ function render({ model, el }) {
 
     // handles the concepts table
     const conceptsTableDispatcher =
-        d3.dispatch('select-row', 'filter', 'sort', 'change-dp', 'column-resize', 'view-pct');
+        d3.dispatch('select-row', 'filter', 'sort', 'column-resize', 'view-pct', 'hierarchy-data-ready');
+
+    const dpSpinnerDispatcher = d3.dispatch('change-dp');
 
     // <editor-fold desc="---------- TOOLTIP DISPATCHER ----------">
 
@@ -974,11 +977,11 @@ function render({ model, el }) {
         // Attach event listeners
         dragBarElement.addEventListener('mouseenter', onMouseEnter);
         dragBarElement.addEventListener('mouseleave', onMouseLeave);
-        dragBarElement.addEventListener('pointerdown', onPointerDown);
-        dragBarElement.addEventListener('pointermove', onPointerMove);
-        dragBarElement.addEventListener('pointerup', onPointerUp);
+        dragBarElement.addEventListener('pointerdown', onPointerDown);      // calls dispatch "dragstart"
+        dragBarElement.addEventListener('pointermove', onPointerMove);      // calls dispatch "drag"
+        dragBarElement.addEventListener('pointerup', onPointerUp);          // calls dispatch "dragend"
         dragBarElement.addEventListener('pointercancel', onPointerCancel);
-        dragBarElement.addEventListener('dblclick', onDoubleClick);
+        dragBarElement.addEventListener('dblclick', onDoubleClick);         // calls dispatch "toggle"
 
         conceptsTableDispatcher.on('select-row', (rowData, isSelected) => {
             // console.log('handling state change. state = ', isSelected ? 'split' : 'left-full');
@@ -1280,8 +1283,18 @@ function render({ model, el }) {
 
     // <editor-fold desc="---------- VERTICAL BAR CHART FUNCTIONS ----------">
 
+    function drawVerticalBarChart(container, cohort1_data, cohort2_data = null, dimensions = {}){
+        const series2_data = cohort2_exists ?
+            {data: cohort2_data, shortname: cohort2_shortname, total_count: cohort2_stats[0].total_count} : {};
+        const chart = VerticalBarChart(container,
+            {data: cohort1_data, shortname: cohort1_shortname, total_count: cohort1_stats[0].total_count},
+            {series2: series2_data, dimensions: dimensions});
+        container.append(() => chart);
+    }
+
     // all parameters are optional at the function signature level, but we are validating within the function
     function VerticalBarChart(
+        container,
         series1,
         {
             series2 = { data: null, total_count: null, shortname: "cohort 2"},
@@ -1330,6 +1343,32 @@ function render({ model, el }) {
         const color = d3.scaleOrdinal()
             .domain([series1.shortname, series2.shortname])
             .range(d3.schemePaired.slice(0, 2));
+
+        function getChartTooltipContent(opts = { scale: 1.8, maxWidth: 600, maxHeight: 200 }) {
+            const svgNode = svg.node();
+            const origWidth  = +(svgNode.getAttribute('width')  || width);
+            const origHeight = +(svgNode.getAttribute('height') || height);
+            const vb = svgNode.getAttribute('viewBox');
+
+            const clone = svgNode.cloneNode(true);
+            clone.style.pointerEvents = 'none'; // ensure tooltip doesn’t intercept hover
+            const targetWidth  = Math.min(origWidth  * (opts.scale ?? 1.8), opts.maxWidth  ?? 600);
+            const targetHeight = Math.min(origHeight * (opts.scale ?? 1.8), opts.maxHeight ?? 200);
+
+            if (vb) {
+                clone.setAttribute('width', targetWidth);
+                clone.setAttribute('height', targetHeight);
+                clone.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+            } else {
+                clone.style.transformOrigin = 'top left';
+                clone.style.transform = `scale(${opts.scale ?? 1.8})`;
+            }
+
+            const wrapper = document.createElement('div');
+            wrapper.className = 'chart-tooltip-content';
+            wrapper.appendChild(clone);
+            return wrapper.outerHTML;
+        }
 
         // X-axis
         svg.append('g')
@@ -1385,6 +1424,36 @@ function render({ model, el }) {
             .attr('x', width / 2)
             .attr('y', margin.top / 2)
             .text(title);
+
+        // invisible rectangle to show enlarged chart tooltip
+        const bgHoverRect = svg.append('rect')
+            .attr('class', 'chart-hover-bg')
+            .attr('x', margin.left)
+            .attr('y', margin.top)
+            .attr('width', width - margin.left - margin.right)
+            .attr('height', height - margin.top - margin.bottom)
+            .attr('fill', 'transparent')
+            .style('pointer-events', 'all'); // ensure it can receive hover when not over bars
+
+        bgHoverRect
+            .on('mouseenter.chartTooltip', function(event) {
+                const node = svg.node();
+                const content = typeof node.getChartTooltipContent === 'function'
+                    ? node.getChartTooltipContent()
+                    : '';
+                if (content) {
+                    tooltipDispatcher.call('show', null, { content, event });
+                }
+            })
+            .on('mousemove.chartTooltip', function(event) {
+                // If your dispatcher supports content:null, you can just reposition:
+                tooltipDispatcher.call('show', null, { content: null, event });
+                // Otherwise, you can re-send content:
+                // tooltipDispatcher.call('show', null, { content: svg.node().getChartTooltipContent(), event });
+            })
+            .on('mouseleave.chartTooltip', function() {
+                tooltipDispatcher.call('hide');
+            });
 
         function drawSeriesBars(container, series, series_index, class_base_name, yScale) {
             function getTooltipContent(d, series, xlabel) {
@@ -1465,12 +1534,136 @@ function render({ model, el }) {
         });
         toggle_view_dispatcher.call("toggle_view", null, show_percentage); // initialize state
 
-        return svg.node();
+        // Expose getChartTooltipContent
+        const node = svg.node();
+        // node.getChartTooltipContent = getChartTooltipContent;
+
+        return node;
     }
 
     // </editor-fold>
 
     // <editor-fold desc="---------- HIERARCHICAL TABLE FUNCTIONS ----------">
+
+    // manages resizing the hierarchy view based on dragbar changes
+    function setupHierarchyViewManager(container, dispatcher, dragbarDispatcher) {
+        let currentData = null;
+        let currentShortnames = null;
+
+        function showNoDataMessage() {
+            container.selectAll('*').remove();
+            container.append('p')
+                .style('padding', '8px')
+                .style('color', '#666')
+                .style('font-size', '12px')
+                .text('No data to display.');
+        }
+
+        function showErrorMessage(errorMsg) {
+            container.selectAll('*').remove();
+            container.append('p')
+                .style('padding', '8px')
+                .style('color', '#f44336')
+                .style('font-size', '12px')
+                .text(`Error: ${errorMsg}`);
+        }
+
+        function updateHierarchyView() {
+            if (!currentData) {
+                showNoDataMessage();
+                return;
+            }
+
+            // Clear existing content
+            container.node().innerHTML = '';
+
+            const concept_hier_wrapper = container.append('div')
+                .style('height', '100%')
+                .style('overflow', 'auto')
+                .style('width', '100%')
+                .style('flex', '1 1 0')
+                .style('min-height', '0')
+                .style('position', 'relative')
+                .style('box-sizing', 'border-box');
+
+            const concept_hier_rect_bounds = container.node().getBoundingClientRect();
+
+            // Calculate SVG height based on number of cards
+            const parents = currentData.parents || [];
+            const children = currentData.children || [];
+
+            const minCardWidth = 150;
+            const cardPadding = 8;
+            const availableWidth = concept_hier_rect_bounds.width - 24;
+
+            const cardsPerRow = Math.floor((availableWidth + cardPadding) / (minCardWidth + cardPadding));
+            const actualCardsPerRow = Math.max(1, cardsPerRow);
+
+            const parentRows = Math.ceil(parents.length / actualCardsPerRow);
+            const childRows = Math.ceil(children.length / actualCardsPerRow);
+
+            const minCardHeight = 80;
+            const topSectionHeight = 180;
+            const middleSectionHeight = 360;
+            const bottomSectionHeight = 180;
+
+            const topHeight = Math.max(topSectionHeight, parentRows * (minCardHeight + cardPadding) + 24);
+            const bottomHeight = Math.max(bottomSectionHeight, childRows * (minCardHeight + cardPadding) + 24);
+
+            const svgHeight = topHeight + middleSectionHeight + bottomHeight;
+
+            const svg_hier = HierarchyView(currentData, {
+                width: concept_hier_rect_bounds.width,
+                height: svgHeight,
+                shortnames: currentShortnames,
+                dispatcher: hierarchyViewDispatcher
+            });
+            concept_hier_wrapper.node().appendChild(svg_hier);
+        }
+
+        // Listen for data from the table
+        dispatcher.on('hierarchy-data-ready.manager', (payload) => {
+            if (!payload) {
+                // Clear
+                currentData = null;
+                currentShortnames = null;
+                showNoDataMessage();
+                return;
+            }
+
+            if (payload.error) {
+                // Show error
+                currentData = null;
+                currentShortnames = null;
+                showErrorMessage(payload.error);
+                return;
+            }
+
+            // Store data and render
+            currentData = payload.data;
+            currentShortnames = payload.shortnames;
+            updateHierarchyView();
+        });
+
+        // Listen for dragbar events to trigger re-render
+        dragbarDispatcher.on('drag.hierManager', () => {
+            if (currentData) {
+                updateHierarchyView();
+            }
+        });
+
+        dragbarDispatcher.on('dragend.hierManager', () => {
+            if (currentData) {
+                updateHierarchyView();
+            }
+        });
+
+        dragbarDispatcher.on('toggle.hierManager', () => {
+            if (currentData) {
+                updateHierarchyView();
+            }
+        });
+    }
 
     function HierarchyView(data, { width = 960, height = 720, shortnames = [], dispatcher = null } = {}){
         // console.log('HierarchyView data = ', data);
@@ -1484,7 +1677,7 @@ function render({ model, el }) {
         const H3 = height - H1 - H2;  // Bottom section height
         const pad = 12;           // Padding
         const cardPadding = 8;    // Padding between cards
-        const minCardWidth = 300;
+        const minCardWidth = 220;
         const minCardHeight = 80;
         const sectionGap = 8;     // Gap between sections
         const separatorThickness = 3;  // Bold line thickness
@@ -1493,6 +1686,8 @@ function render({ model, el }) {
         // State
         let centerCard = data.caller_node || null;
         let currentData = data; // Store current data reference
+
+        let prevalence_dp = default_prevalence_dp;
 
         // Create SVG root
         const svg = d3.create("svg")
@@ -1515,12 +1710,12 @@ function render({ model, el }) {
             const rowGap = 4;
             const headerLineSpacing = 18;
             const separatorMargin = 6;
-            const headerExtraLine = 18; // Space for potential second line in header
+            const headerExtraLines = 36; // Space for up to 3 lines (was 18 for 2 lines)
 
-            const separatorY = headerLineSpacing + headerExtraLine + separatorMargin;
+            const separatorY = headerLineSpacing + headerExtraLines + separatorMargin;
             const dataStartY = separatorY + separatorMargin;
 
-            // Calculate height based on number of keys (no extra lines needed in body now)
+            // Calculate height based on number of keys
             const dataHeight = include_keys.length * (fontSize + rowGap);
 
             return padding + dataStartY + dataHeight + padding;
@@ -1542,32 +1737,55 @@ function render({ model, el }) {
             const headerGroup = cardGroup.append('g')
                 .attr('transform', `translate(${padding}, ${padding})`);
 
-            // Wrap concept_name in header to 2 lines if necessary
+            // Wrap concept_name in header to 3 lines if necessary
             const conceptName = d.concept_name || '';
             const maxCharsPerLine = Math.floor(headerWidth / 6); // Approximate chars that fit
 
             let line1 = '';
             let line2 = '';
+            let line3 = '';
 
             if (conceptName.length > maxCharsPerLine) {
-                // Split into two lines at word boundaries
+                // Split into up to three lines at word boundaries
                 const words = conceptName.split(' ');
                 let currentLine = 1;
 
                 words.forEach(word => {
-                    const testLine = currentLine === 1 ?
-                        (line1 + (line1 ? ' ' : '') + word) :
-                        (line2 + (line2 ? ' ' : '') + word);
+                    let testLine;
+                    if (currentLine === 1) {
+                        testLine = line1 + (line1 ? ' ' : '') + word;
+                    } else if (currentLine === 2) {
+                        testLine = line2 + (line2 ? ' ' : '') + word;
+                    } else {
+                        testLine = line3 + (line3 ? ' ' : '') + word;
+                    }
 
-                    if (testLine.length <= maxCharsPerLine || (currentLine === 1 && !line1) || (currentLine === 2 && !line2)) {
+                    // Check if we need to move to next line
+                    if (testLine.length <= maxCharsPerLine ||
+                        (currentLine === 1 && !line1) ||
+                        (currentLine === 2 && !line2) ||
+                        (currentLine === 3 && !line3)) {
+                        // Word fits on current line
                         if (currentLine === 1) {
                             line1 = testLine;
-                        } else {
+                        } else if (currentLine === 2) {
                             line2 = testLine;
+                        } else {
+                            line3 = testLine;
                         }
                     } else {
-                        currentLine = 2;
-                        line2 = word;
+                        // Word doesn't fit, move to next line
+                        if (currentLine < 3) {
+                            currentLine++;
+                            if (currentLine === 2) {
+                                line2 = word;
+                            } else if (currentLine === 3) {
+                                line3 = word;
+                            }
+                        } else {
+                            // Already on line 3, just append (truncation will happen naturally)
+                            line3 = testLine;
+                        }
                     }
                 });
             } else {
@@ -1583,29 +1801,44 @@ function render({ model, el }) {
                 .attr('fill', '#000')
                 .text(line1);
 
-            // Second line of concept name (if needed)
+            // Track current Y position
             let currentHeaderY = 0;
+
+            // Second line of concept name (if needed)
             if (line2) {
+                currentHeaderY += headerLineSpacing;
                 headerGroup.append('text')
                     .attr('x', 0)
-                    .attr('y', headerLineSpacing)
+                    .attr('y', currentHeaderY)
                     .attr('font-size', 11)
                     .attr('font-weight', 'bold')
                     .attr('fill', '#000')
                     .text(line2);
-                currentHeaderY = headerLineSpacing;
+            }
+
+            // Third line of concept name (if needed)
+            if (line3) {
+                currentHeaderY += headerLineSpacing;
+                headerGroup.append('text')
+                    .attr('x', 0)
+                    .attr('y', currentHeaderY)
+                    .attr('font-size', 11)
+                    .attr('font-weight', 'bold')
+                    .attr('fill', '#000')
+                    .text(line3);
             }
 
             // SNOMED code line
+            currentHeaderY += headerLineSpacing;
             headerGroup.append('text')
                 .attr('x', 0)
-                .attr('y', currentHeaderY + headerLineSpacing)
+                .attr('y', currentHeaderY)
                 .attr('font-size', 11)
                 .attr('fill', '#666')
                 .text(`(SNOMED Code: ${d.concept_code})`);
 
             // Calculate separator position (accounting for wrapped header)
-            const separatorY = currentHeaderY + headerLineSpacing + separatorMargin;
+            const separatorY = currentHeaderY + separatorMargin;
 
             // Add separator line
             headerGroup.append('line')
@@ -1638,8 +1871,10 @@ function render({ model, el }) {
                     .attr('fill', '#000')
                     .text(makeKeyWords(key, shortnames[0], shortnames[1]) + ':');
 
-                // Value (no special handling needed anymore)
-                const value = d[key] !== undefined ? d[key] : '—';
+                let value = d[key] !== undefined ? d[key] : '—';
+                if (key.includes('prevalence'))
+                    value = value.toFixed(prevalence_dp);
+
                 rowGroup.append('text')
                     .attr('x', labelWidth + columnGap)
                     .attr('y', fontSize)
@@ -1895,13 +2130,12 @@ function render({ model, el }) {
             }
         }
 
-        // Updated layoutCardsInGrid - calculates height once and returns total height used
         function layoutCardsInGrid(parentGroup, items, availableWidth, availableHeight, isDraggable = true) {
 
             if (items.length === 0) {
                 // Show "No data to show" message
                 parentGroup.append("text")
-                    .attr("x", availableWidth / 2)
+                    .attr("x", Math.max(availableWidth / 2, 50))
                     .attr("y", 30)
                     .attr("text-anchor", "middle")
                     .attr("font-size", 14)
@@ -1918,9 +2152,79 @@ function render({ model, el }) {
             // Prepare remaining items
             items.slice(1).forEach(item => prepareItemData(item));
 
+            // Absolute minimum to prevent errors - never go below this
+            const absoluteMinWidth = Math.max(minCardWidth, 100);
+            const effectiveAvailableWidth = Math.max(availableWidth, absoluteMinWidth + pad * 2);
+
+            // Calculate cards per row based on minimum width
+            const cardsPerRow = Math.floor((effectiveAvailableWidth + cardPadding) / (minCardWidth + cardPadding));
+            const actualCardsPerRow = Math.max(1, Math.min(cardsPerRow, items.length));
+
+            // Calculate card width
+            let cardWidth = (effectiveAvailableWidth - (actualCardsPerRow - 1) * cardPadding) / actualCardsPerRow;
+
+            // Enforce minimum width
+            cardWidth = Math.max(cardWidth, minCardWidth);
+
+            items.forEach((item, i) => {
+                const row = Math.floor(i / actualCardsPerRow);
+                const col = i % actualCardsPerRow;
+                const x = col * (cardWidth + cardPadding);
+                const y = row * (cardHeight + cardPadding);
+                createCard(parentGroup, x, y, cardWidth, cardHeight, item, keys, isDraggable);
+            });
+
+            // Calculate and return total height used
+            const numRows = Math.ceil(items.length / actualCardsPerRow);
+            const totalHeight = numRows * cardHeight + (numRows - 1) * cardPadding;
+            return totalHeight;
+        }// Updated layoutCardsInGrid - enforces minimum card width
+        function layoutCardsInGrid(parentGroup, items, availableWidth, availableHeight, isDraggable = true) {
+
+            if (items.length === 0) {
+                // Show "No data to show" message
+                parentGroup.append("text")
+                    .attr("x", Math.max(availableWidth / 2, 50))
+                    .attr("y", 30)
+                    .attr("text-anchor", "middle")
+                    .attr("font-size", 14)
+                    .attr("fill", "#999")
+                    .text("No data to show");
+                return 50; // Return minimal height for empty section
+            }
+
+            // Prepare first item to determine keys and calculate height once
+            const firstItem = items[0];
+            const keys = prepareItemData(firstItem);
+            const cardHeight = calculateCardHeight(keys);
+
+            // Prepare remaining items
+            items.slice(1).forEach(item => prepareItemData(item));
+
+            // If container is too narrow for even one card, use minCardWidth
+            if (availableWidth < minCardWidth) {
+                // Force single column with minimum width
+                const cardWidth = minCardWidth;
+
+                items.forEach((item, i) => {
+                    const y = i * (cardHeight + cardPadding);
+                    createCard(parentGroup, 0, y, cardWidth, cardHeight, item, keys, isDraggable);
+                });
+
+                const totalHeight = items.length * cardHeight + (items.length - 1) * cardPadding;
+                return totalHeight;
+            }
+
             const cardsPerRow = Math.floor((availableWidth + cardPadding) / (minCardWidth + cardPadding));
             const actualCardsPerRow = Math.max(1, Math.min(cardsPerRow, items.length));
-            const cardWidth = (availableWidth - (actualCardsPerRow - 1) * cardPadding) / actualCardsPerRow;
+
+            // Calculate card width
+            let cardWidth = (availableWidth - (actualCardsPerRow - 1) * cardPadding) / actualCardsPerRow;
+
+            // Enforce minimum, but if that would cause negative width for padding, use available width
+            if (cardWidth < minCardWidth) {
+                cardWidth = minCardWidth;
+            }
 
             items.forEach((item, i) => {
                 const row = Math.floor(i / actualCardsPerRow);
@@ -1982,13 +2286,20 @@ function render({ model, el }) {
             }
         }
 
-        // Redraw the entire view with dynamic positioning
+        // Redraw the entire view with
         function redrawHierarchyView() {
             // Clear all layers
             topLayer.selectAll("*").remove();
             middleLayer.selectAll("*").remove();
             bottomLayer.selectAll("*").remove();
             separatorLayer.selectAll("*").remove();
+
+            // Calculate minimum SVG width needed
+            const minSvgWidth = minCardWidth + 2 * pad;
+            const effectiveSvgWidth = Math.max(width, minSvgWidth);
+
+            // Update SVG width if it's smaller than minimum
+            svg.attr("width", effectiveSvgWidth);
 
             // Use currentData instead of data
             const centerCardId = centerCard?.concept_id;
@@ -2067,6 +2378,17 @@ function render({ model, el }) {
 
         // Initial draw
         redrawHierarchyView();
+
+        dpSpinnerDispatcher.on("change-dp.hierview", function(dp_value) {
+            // Parse and validate the decimal places value
+            let newDP = parseInt(dp_value);
+            if (isNaN(newDP) || newDP < 0 || newDP > 16) {
+                newDP = 0;
+            }
+
+            prevalence_dp = newDP;
+            redrawHierarchyView();
+        });
 
         return svg.node();
     }
@@ -2498,7 +2820,7 @@ function render({ model, el }) {
             }
         });
 
-        dispatch.on("change-dp", function(dp_value) {
+        dpSpinnerDispatcher.on("change-dp", function(dp_value) {
             // Parse and validate the decimal places value
             let newDP = parseInt(dp_value);
             if (isNaN(newDP) || newDP < 0 || newDP > 16) {
@@ -2772,7 +3094,6 @@ function render({ model, el }) {
         }
 
         async function onConceptTableRowSelect(rowData, isSelected) {
-
             // Helper function to show default message
             function showNoDataMessage() {
                 d3.select(concept_hier_col.node())
@@ -2783,17 +3104,15 @@ function render({ model, el }) {
                     .text('No data to display.');
             }
 
-            // console.log(`Row ${isSelected ? 'selected' : 'deselected'}:`, rowData);
-
             // Cancel any pending requests when selection changes
             requestManager.cancelAll();
-            // Clear the right panel
-            d3.select(concept_hier_col.node()).selectAll('*').remove();
+
             // Open or close the right panel depending on selection state
             dispatch.call("select-row", this, rowData, isSelected);
 
             if (!isSelected) {
-                showNoDataMessage();
+                // Dispatch with null data to clear the hierarchy view
+                dispatch.call("hierarchy-data-ready", this, null);
                 return;
             }
 
@@ -2812,89 +3131,23 @@ function render({ model, el }) {
                     }
                 );
 
-                // console.log("Received parent and child nodes data:", immediate_nodes_data);concept_hier_col.innerHTML = '';
-
-                concept_hier_col.innerHTML = '';
-
-                const concept_hier_wrapper = concept_hier_col.append('div')
-                    .style('height', '100%')
-                    .style('overflow', 'auto')
-                    .style('width', '100%')
-                    .style('flex', '1 1 0')
-                    .style('min-height', '0')
-                    .style('position', 'relative')
-                    .style('box-sizing', 'border-box');
-
-                // Function to create/update the SVG
-                function updateHierarchyView() {
-                    // Clear existing content
-                    concept_hier_wrapper.node().innerHTML = '';
-
-                    const concept_hier_rect_bounds = concept_hier_col.node().getBoundingClientRect();
-
-                    // Calculate SVG height based on number of cards
-                    const parents = immediate_nodes_data.parents || [];
-                    const children = immediate_nodes_data.children || [];
-
-                    const minCardWidth = 150;
-                    const cardPadding = 8;
-                    const availableWidth = concept_hier_rect_bounds.width - 24;
-
-                    const cardsPerRow = Math.floor((availableWidth + cardPadding) / (minCardWidth + cardPadding));
-                    const actualCardsPerRow = Math.max(1, cardsPerRow);
-
-                    const parentRows = Math.ceil(parents.length / actualCardsPerRow);
-                    const childRows = Math.ceil(children.length / actualCardsPerRow);
-
-                    const minCardHeight = 80;
-                    const topSectionHeight = 180;
-                    const middleSectionHeight = 360;
-                    const bottomSectionHeight = 180;
-
-                    const topHeight = Math.max(topSectionHeight, parentRows * (minCardHeight + cardPadding) + 24);
-                    const bottomHeight = Math.max(bottomSectionHeight, childRows * (minCardHeight + cardPadding) + 24);
-
-                    const svgHeight = topHeight + middleSectionHeight + bottomHeight;
-
-                    const svg_hier = HierarchyView(immediate_nodes_data, {
-                        width: concept_hier_rect_bounds.width,
-                        height: svgHeight,
-                        shortnames: [cohort1_shortname, cohort2_shortname],
-                        dispatcher: hierarchyViewDispatcher
-                    });
-                    concept_hier_wrapper.node().appendChild(svg_hier);
-                }
-
-                // Initial draw
-                updateHierarchyView();
-
-                // Listen to drag events and redraw
-                conceptsDragbarDispatcher.on('drag.hiercard', () => {
-                    updateHierarchyView();
-                });
-
-                // Also listen to dragend for a final update
-                conceptsDragbarDispatcher.on('dragend.hiercard', () => {
-                    updateHierarchyView();
+                // Dispatch the data - let someone else handle rendering
+                dispatch.call("hierarchy-data-ready", this, {
+                    data: immediate_nodes_data,
+                    shortnames: [cohort1_shortname, cohort2_shortname]
                 });
 
             } catch (error) {
                 if (error.message === 'Request cancelled') {
-                    // console.log('Immediate nodes request was cancelled');
-                    // Deselect the row when cancelled
-                    // Show default message for cancelled requests
-                    showNoDataMessage();
+                    // Dispatch null to show default message
+                    dispatch.call("hierarchy-data-ready", this, null);
                 } else {
                     console.error("Error fetching immediate nodes:", error);
 
-                    // Show error message in the panel
-                    d3.select(concept_hier_col.node()).selectAll('*').remove();
-                    d3.select(concept_hier_col.node())
-                        .append('p')
-                        .style('padding', '8px')
-                        .style('color', '#f44336')
-                        .style('font-size', '12px')
-                        .text(`Error: ${error.message || 'Failed to fetch immediate nodes'}`);
+                    // Dispatch error info
+                    dispatch.call("hierarchy-data-ready", this, {
+                        error: error.message || 'Failed to fetch immediate nodes'
+                    });
                 }
             }
         }
@@ -3057,6 +3310,9 @@ function render({ model, el }) {
 
     // demographics row
     const demographics_row = vis_container.append('div').attr('class', 'row-container demographics-row');
+    // const demographics_col = demographics_row.append('div').attr('class', 'col-container');
+    // const demographics_row1 = vis_container.append('div').attr('class', 'row-container demographics-row');
+    // const demographics_row2 = vis_container.append('div').attr('class', 'row-container demographics-row');
     const gender_col = demographics_row.append('div').attr('class', 'col-container');
     const race_col = demographics_row.append('div').attr('class', 'col-container');
     const ethnicity_col = demographics_row.append('div').attr('class', 'col-container');
@@ -3086,6 +3342,12 @@ function render({ model, el }) {
         visContainer: vis_container
     });
 
+    setupHierarchyViewManager(
+        concept_hier_col,
+        conceptsTableDispatcher,
+        conceptsDragbarDispatcher
+    );
+
     // const concepts_parents_row = concept_hier_col.append('div').attr('class', 'row-container concepts-tables-row');
     // const concepts_children_row = concept_hier_col.append('div').attr('class', 'row-container concepts-tables-row');
 
@@ -3099,43 +3361,19 @@ function render({ model, el }) {
     SummaryStatistics(cohort_summary_col, {data: cohort1_stats, meta: cohort1_meta, shortname: cohort1_shortname},
         {series2: {data: cohort2_stats, meta: cohort2_meta, shortname: cohort2_shortname}});
 
-    // draw the gender barchart
-    let series2_data = cohort2_exists ?
-        {data: gender_dist2, shortname: cohort2_shortname, total_count: cohort2_stats[0].total_count} : {};
-    gender_col.append(() =>
-        VerticalBarChart({data: gender_dist1, shortname: cohort1_shortname, total_count: cohort1_stats[0].total_count},
-            {series2: series2_data, dimensions: {xlabel: 'gender'}})
-    );
-
-    series2_data = cohort2_exists ?
-        {data: race_stats2, shortname: cohort2_shortname, total_count: cohort2_stats[0].total_count} : {};
-    race_col.append(() =>
-        VerticalBarChart({data: race_stats1, shortname: cohort1_shortname, total_count: cohort1_stats[0].total_count},
-            {series2: series2_data, dimensions: {xlabel: 'race'}})
-    );
-
-    series2_data = cohort2_exists ?
-        {data: ethnicity_stats2, shortname: cohort2_shortname, total_count: cohort2_stats[0].total_count} : {};
-    ethnicity_col.append(() =>
-        VerticalBarChart({data: ethnicity_stats1, shortname: cohort1_shortname, total_count: cohort1_stats[0].total_count},
-            {series2: series2_data, dimensions: {xlabel: 'ethnicity'}})
-    );
-
-    series2_data = cohort2_exists ?
-        {data: age_dist2, shortname: cohort2_shortname, total_count: cohort2_stats[0].total_count} : {};
-    age_col.append(() =>
-        VerticalBarChart({data: age_dist1, shortname: cohort1_shortname, total_count: cohort1_stats[0].total_count},
-            {series2: series2_data, dimensions: {xlabel: 'age'}})
-    );
+    // draw the barcharts
+    drawVerticalBarChart(gender_col, gender_dist1, gender_dist2, {xlabel: 'gender'});
+    drawVerticalBarChart(race_col, race_stats1, race_stats2, {xlabel: 'race'});
+    drawVerticalBarChart(ethnicity_col, ethnicity_stats1, ethnicity_stats2, {xlabel: 'ethnicity'});
+    drawVerticalBarChart(age_col, age_dist1, age_dist2, {xlabel: 'age'});
 
     // draw the concepts table search box
     concepts_ctrl_row.append(() =>
         SearchBox(conceptsTableDispatcher, {label: 'Filter concept code or name'})
     );
 
-    const default_prevalence_dp = 3;
     concepts_ctrl_row.append(() =>
-        SpinnerBox(conceptsTableDispatcher, {label: 'Prev dp'})
+        SpinnerBox(dpSpinnerDispatcher, {label: 'Prev dp'})
     );
 
     if(cohort2_exists) {
