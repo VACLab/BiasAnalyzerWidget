@@ -196,7 +196,6 @@ class CohortViewer(anywidget.AnyWidget):
         return result
 
     def _get_immediate_nodes(self, params):
-        """Get parents with first 2 levels of children only"""
         # self.log(f'params: {params}')
         caller_node_id = params.get('caller_node_id')
         parent_ids = params.get('parent_ids')
@@ -215,6 +214,8 @@ class CohortViewer(anywidget.AnyWidget):
 
             # Prune to 2 levels (parent + 2 child levels)
             pruned_parent = self._prune_tree(parent_dict, max_depth=0)
+            # self.log(f'pruned_parent_node: {parent_dict}')
+
             result['parents'].append(pruned_parent)
 
         for child_node in caller_node.children:

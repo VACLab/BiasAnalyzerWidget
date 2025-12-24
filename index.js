@@ -11,7 +11,8 @@ import * as Inputs from "https://esm.sh/@observablehq/inputs";
 
 function render({ model, el }) {
 
-    const font_size = '11px';
+    const default_font_size = 11;
+    const default_font_size_px = default_font_size + 'px';
     const default_prevalence_dp = 3;
 
     // <editor-fold desc="---------- REQUEST MANAGER ----------">
@@ -95,7 +96,7 @@ function render({ model, el }) {
                 .style('border-radius', '3px')
                 .style('padding', '2px 8px')
                 .style('cursor', 'pointer')
-                .style('font-size', '11px')
+                .style('font-size', default_font_size_px)
                 .style('color', '#666')
                 .text('Cancel')
                 .on('mouseover', function() {
@@ -288,6 +289,14 @@ function render({ model, el }) {
     const tooltipDispatcher = d3.dispatch("show", "hide");
 
     tooltipDispatcher.on("show", function({ content, event }) {
+        // Always remove existing tooltips first
+        d3.selectAll(".tooltip").remove();
+
+        // If content is null, just hide and don't create new tooltip
+        if (!content) {
+            return;
+        }
+
         const containerRect = vis_container.node().getBoundingClientRect();
         const x = event.clientX - containerRect.left;
         const y = event.clientY - containerRect.top;
@@ -1218,14 +1227,14 @@ function render({ model, el }) {
             if (title !== "") {
                 parentSel.append('h1')
                     .attr('class', 'tight-header')
-                    .style('font-size', '13px')
+                    .style('font-size', '12px')
                     .text(title);
             }
 
             if (desc !== "") {
                 parentSel.append('h2')
                     .attr('class', 'tight-header')
-                    .style('font-size', '11px')
+                    .style('font-size', default_font_size_px)
                     .text(desc);
             }
 
@@ -1302,10 +1311,11 @@ function render({ model, el }) {
                 xlabel = "",
                 title = "",
                 width = 600,
-                height = 200,
-                margin = { top: 40, right: 10, bottom: 60, left: 80 },
+                height = 300,
+                margin = { top: 40, right: 10, bottom: 100, left: 80 },
                 padding = 0.1,
-                show_Percentage: show_percentage = true
+                show_percentage = true,
+                font_size = "14px"
             } = {}
         } = {}
     ) {
@@ -1334,7 +1344,8 @@ function render({ model, el }) {
             .attr("transform", `translate(${width - margin.right - 160}, ${10})`)
             .append(() => ToggleSwitch(toggle_view_dispatcher, {
                 label: "Show Proportion", initial_state: show_percentage
-            }));
+            }))
+            .attr('font-size', font_size);
 
         // X scale
         const xScale = d3.scaleBand(categories, [margin.left, width - margin.right])
@@ -1344,7 +1355,7 @@ function render({ model, el }) {
             .domain([series1.shortname, series2.shortname])
             .range(d3.schemePaired.slice(0, 2));
 
-        function getChartTooltipContent(opts = { scale: 1.8, maxWidth: 600, maxHeight: 200 }) {
+        function getChartTooltipContent(opts = { scale: 0.8, maxWidth: 600, maxHeight: 300 }) {
             const svgNode = svg.node();
             const origWidth  = +(svgNode.getAttribute('width')  || width);
             const origHeight = +(svgNode.getAttribute('height') || height);
@@ -1352,8 +1363,8 @@ function render({ model, el }) {
 
             const clone = svgNode.cloneNode(true);
             clone.style.pointerEvents = 'none'; // ensure tooltip doesn’t intercept hover
-            const targetWidth  = Math.min(origWidth  * (opts.scale ?? 1.8), opts.maxWidth  ?? 600);
-            const targetHeight = Math.min(origHeight * (opts.scale ?? 1.8), opts.maxHeight ?? 200);
+            const targetWidth  = Math.min(origWidth  * (opts.scale ?? 0.8), opts.maxWidth  ?? 600);
+            const targetHeight = Math.min(origHeight * (opts.scale ?? 0.8), opts.maxHeight ?? 300);
 
             if (vb) {
                 clone.setAttribute('width', targetWidth);
@@ -1361,7 +1372,7 @@ function render({ model, el }) {
                 clone.setAttribute('preserveAspectRatio', 'xMidYMid meet');
             } else {
                 clone.style.transformOrigin = 'top left';
-                clone.style.transform = `scale(${opts.scale ?? 1.8})`;
+                clone.style.transform = `scale(${opts.scale ?? 0.8})`;
             }
 
             const wrapper = document.createElement('div');
@@ -1374,14 +1385,20 @@ function render({ model, el }) {
         svg.append('g')
             .attr('transform', `translate(0, ${height - margin.bottom})`)
             .call(d3.axisBottom(xScale))
-            .attr('class', 'axis');
+            .attr('class', 'axis')
+            .selectAll('text')
+            .style('text-anchor', 'start')
+            .attr('dx', '0.8em')
+            .attr('dy', '0.15em')
+            .attr('font-size', font_size)
+            .attr('transform', 'rotate(45)');
 
-        svg.append('text')
-            .attr('class', 'axis-label')
-            .attr('x', width / 2)
-            .attr('y', height - 20)
-            .style('text-anchor', 'middle')
-            .text(xlabel);
+        // svg.append('text')
+        //     .attr('class', 'axis-label')
+        //     .attr('x', width / 2)
+        //     .attr('y', height - 20)
+        //     .style('text-anchor', 'middle')
+        //     .text(xlabel);
 
         // Y-axis group
         const yAxisGroup = svg.append('g')
@@ -1394,6 +1411,7 @@ function render({ model, el }) {
             .attr('x', height / 2 * -1)
             .attr('y', 20)
             .attr('text-anchor', 'middle')
+            .attr('font-size', font_size)
             .text(ylabel);
 
         function drawYAxis() {
@@ -1423,6 +1441,7 @@ function render({ model, el }) {
             .attr('text-anchor', 'middle')
             .attr('x', width / 2)
             .attr('y', margin.top / 2)
+            .attr('font-size', font_size)
             .text(title);
 
         // invisible rectangle to show enlarged chart tooltip
@@ -1433,26 +1452,19 @@ function render({ model, el }) {
             .attr('width', width - margin.left - margin.right)
             .attr('height', height - margin.top - margin.bottom)
             .attr('fill', 'transparent')
-            .style('pointer-events', 'all'); // ensure it can receive hover when not over bars
+            .style('pointer-events', 'all');
 
         bgHoverRect
             .on('mouseenter.chartTooltip', function(event) {
-                const node = svg.node();
-                const content = typeof node.getChartTooltipContent === 'function'
-                    ? node.getChartTooltipContent()
+                const content = typeof getChartTooltipContent === 'function'
+                    ? getChartTooltipContent()
                     : '';
                 if (content) {
-                    tooltipDispatcher.call('show', null, { content, event });
+                    tooltipDispatcher.call("show", null, { content, event });
                 }
             })
-            .on('mousemove.chartTooltip', function(event) {
-                // If your dispatcher supports content:null, you can just reposition:
-                tooltipDispatcher.call('show', null, { content: null, event });
-                // Otherwise, you can re-send content:
-                // tooltipDispatcher.call('show', null, { content: svg.node().getChartTooltipContent(), event });
-            })
             .on('mouseleave.chartTooltip', function() {
-                tooltipDispatcher.call('hide');
+                tooltipDispatcher.call("hide");
             });
 
         function drawSeriesBars(container, series, series_index, class_base_name, yScale) {
@@ -1466,16 +1478,7 @@ function render({ model, el }) {
             const half = bw / 2;
 
             const bars = container.selectAll('.' + class_name)
-                .data(series.data, d => d.category)
-                .on("mouseover", function (event, d, ) {
-                    tooltipDispatcher.call("show", null, {
-                        content: getTooltipContent(d, series, xlabel),
-                        event: event
-                    });
-                })
-                .on("mouseout", function () {
-                    tooltipDispatcher.call("hide");
-                });
+                .data(series.data, d => d.category);
 
             bars.join(
                 enter => enter.append('rect')
@@ -1484,13 +1487,33 @@ function render({ model, el }) {
                     .attr('width', series2_exists ? half : bw)
                     .attr('y', d => yScale(show_percentage ? d.probability : +d.value))
                     .attr('height', d => height - margin.bottom - yScale(show_percentage ? d.probability : +d.value))
-                    .attr('fill', d => color(series.shortname)), update => update.transition().duration(500)
+                    .attr('fill', d => color(series.shortname))
+                    .on("mouseenter", function (event, d) {
+                        // Hide chart tooltip and show bar tooltip
+                        tooltipDispatcher.call("hide");
+                        tooltipDispatcher.call("show", null, {
+                            content: getTooltipContent(d, series, xlabel),
+                            event: event
+                        });
+                    })
+                    .on("mouseleave", function (event) {
+                        // Hide bar tooltip and show chart tooltip again
+                        tooltipDispatcher.call("hide");
+                        const content = typeof getChartTooltipContent === 'function'
+                            ? getChartTooltipContent()
+                            : '';
+                        if (content) {
+                            tooltipDispatcher.call("show", null, { content, event });
+                        }
+                    }),
+                update => update.transition().duration(500)
                     .attr('y', d => yScale(show_percentage ? d.probability : +d.value))
                     .attr('height', d => height - margin.bottom - yScale(show_percentage ? d.probability : +d.value))
             );
         }
 
         drawSeriesBars(svg, series1, 1, 'bar', yScale);
+
         if (series2_exists) {
             drawSeriesBars(svg, series2, 2, 'bar', yScale);
 
@@ -1518,7 +1541,7 @@ function render({ model, el }) {
             legend_items.append('text')
                 .attr('x', 24)
                 .attr('y', 14)
-                .style('font-size', 12)
+                .style('font-size', font_size)
                 .text(d => d.label);
         }
 
@@ -1546,7 +1569,7 @@ function render({ model, el }) {
     // <editor-fold desc="---------- HIERARCHICAL TABLE FUNCTIONS ----------">
 
     // manages resizing the hierarchy view based on dragbar changes
-    function setupHierarchyViewManager(container, dispatcher, dragbarDispatcher) {
+    function setupHierarchyViewManager(container, tableDispatcher, dragbarDispatcher) {
         let currentData = null;
         let currentShortnames = null;
 
@@ -1622,7 +1645,7 @@ function render({ model, el }) {
         }
 
         // Listen for data from the table
-        dispatcher.on('hierarchy-data-ready.manager', (payload) => {
+        tableDispatcher.on('hierarchy-data-ready.manager', (payload) => {
             if (!payload) {
                 // Clear
                 currentData = null;
@@ -1658,7 +1681,7 @@ function render({ model, el }) {
             }
         });
 
-        dragbarDispatcher.on('toggle.hierManager', () => {
+        dragbarDispatcher.on('toggle', () => {
             if (currentData) {
                 updateHierarchyView();
             }
@@ -1796,7 +1819,7 @@ function render({ model, el }) {
             headerGroup.append('text')
                 .attr('x', 0)
                 .attr('y', 0)
-                .attr('font-size', 11)
+                .attr('font-size', default_font_size)
                 .attr('font-weight', 'bold')
                 .attr('fill', '#000')
                 .text(line1);
@@ -1810,7 +1833,7 @@ function render({ model, el }) {
                 headerGroup.append('text')
                     .attr('x', 0)
                     .attr('y', currentHeaderY)
-                    .attr('font-size', 11)
+                    .attr('font-size', default_font_size)
                     .attr('font-weight', 'bold')
                     .attr('fill', '#000')
                     .text(line2);
@@ -1822,7 +1845,7 @@ function render({ model, el }) {
                 headerGroup.append('text')
                     .attr('x', 0)
                     .attr('y', currentHeaderY)
-                    .attr('font-size', 11)
+                    .attr('font-size', default_font_size)
                     .attr('font-weight', 'bold')
                     .attr('fill', '#000')
                     .text(line3);
@@ -1833,7 +1856,7 @@ function render({ model, el }) {
             headerGroup.append('text')
                 .attr('x', 0)
                 .attr('y', currentHeaderY)
-                .attr('font-size', 11)
+                .attr('font-size', default_font_size)
                 .attr('fill', '#666')
                 .text(`(SNOMED Code: ${d.concept_code})`);
 
@@ -1866,7 +1889,7 @@ function render({ model, el }) {
                 rowGroup.append('text')
                     .attr('x', 0)
                     .attr('y', fontSize)
-                    .attr('font-size', fontSize)
+                    .attr('font-size', default_font_size)
                     .attr('text-anchor', 'start')
                     .attr('fill', '#000')
                     .text(makeKeyWords(key, shortnames[0], shortnames[1]) + ':');
@@ -1878,12 +1901,12 @@ function render({ model, el }) {
                 rowGroup.append('text')
                     .attr('x', labelWidth + columnGap)
                     .attr('y', fontSize)
-                    .attr('font-size', fontSize)
+                    .attr('font-size', default_font_size)
                     .attr('text-anchor', 'start')
                     .attr('fill', '#000')
                     .text(value);
 
-                currentY += fontSize + rowGap;
+                currentY += default_font_size + rowGap;
             });
         }
 
@@ -2138,7 +2161,7 @@ function render({ model, el }) {
                     .attr("x", Math.max(availableWidth / 2, 50))
                     .attr("y", 30)
                     .attr("text-anchor", "middle")
-                    .attr("font-size", 14)
+                    .attr("font-size", 12)
                     .attr("fill", "#999")
                     .text("No data to show");
                 return 50; // Return minimal height for empty section
@@ -2187,7 +2210,7 @@ function render({ model, el }) {
                     .attr("x", Math.max(availableWidth / 2, 50))
                     .attr("y", 30)
                     .attr("text-anchor", "middle")
-                    .attr("font-size", 14)
+                    .attr("font-size", 16)
                     .attr("fill", "#999")
                     .text("No data to show");
                 return 50; // Return minimal height for empty section
@@ -2724,7 +2747,7 @@ function render({ model, el }) {
             .attr("y", row_height / 2)
             .attr("dy", "0.35em")
             .attr("text-anchor", "middle")
-            .attr("font-size", font_size)
+            .attr("font-size", default_font_size_px)
             .attr("fill", "#666")
             .style("cursor", "pointer")
             .style("pointer-events", "all")

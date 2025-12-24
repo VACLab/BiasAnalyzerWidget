@@ -141,15 +141,15 @@ h1.tight-header, h2.tight-header {
 
 /* overall barchart size */
 .barchart{
-    font-size: 12px;
+    /*font-size: 14px;*/
     width: 100%;  /* allows resize to fit the page*/
     height: auto;
 }
 
 /* axis labels */
-.axis-label {
-    font-size: 14px;
-}
+/*.axis-label {*/
+    /*font-size: 14px;*/
+/*}*/
 /* lines and tick marks */
 .axis path,
 .axis line {
@@ -158,9 +158,9 @@ h1.tight-header, h2.tight-header {
     shape-rendering: crispEdges;
 }
 /* axis text */
-.axis text {
-    font-size: 14px;
-}
+/*.axis text {*/
+/*    font-size: 14px;*/
+/*}*/
 
 /* CONCEPTS TABLE */
 
