@@ -106,7 +106,7 @@ function render({ model, el }) {
                     d3.select(this).style('background', 'transparent');
                 })
                 .on('click', () => {
-                    this.cancelRequest(id);
+                    this.cancelRequest(id, true); // Pass true for explicit cancellation
                 });
 
             return {
@@ -173,7 +173,7 @@ function render({ model, el }) {
             }, 3000);
         }
 
-        cancelRequest(requestId) {
+        cancelRequest(requestId, explicit = false) {
             const pending = this.pendingRequests.get(requestId);
             if (pending) {
                 // Remove progress indicator
@@ -181,8 +181,8 @@ function render({ model, el }) {
                     d3.select(pending.progressElement.element).remove();
                 }
 
-                // Reject the promise with cancellation error
-                pending.reject(new Error('Request cancelled'));
+                // Resolve with cancellation indicator, including whether it was explicit
+                pending.resolve({ cancelled: true, explicit: explicit });
 
                 // Remove from pending
                 this.pendingRequests.delete(requestId);
@@ -198,13 +198,14 @@ function render({ model, el }) {
             return false;
         }
 
-        cancelAll() {
+        cancelAll(explicit = false) {
             const cancelledIds = [];
             this.pendingRequests.forEach((pending, id) => {
                 if (pending.progressElement) {
                     d3.select(pending.progressElement.element).remove();
                 }
-                pending.reject(new Error('All requests cancelled'));
+                // Resolve with cancellation indicator, including whether it was explicit
+                pending.resolve({ cancelled: true, explicit: explicit });
                 cancelledIds.push(id);
             });
             this.pendingRequests.clear();
@@ -227,6 +228,10 @@ function render({ model, el }) {
 
                 if (showProgress) {
                     const targetContainer = progressContainer || this.container;
+
+                    // Clear any existing content in the container before adding progress
+                    d3.select(targetContainer).selectAll('*').remove();
+
                     const localProgress = this.createLocalProgress(
                         targetContainer,
                         statusMessage,
@@ -1611,6 +1616,11 @@ function render({ model, el }) {
 
             const concept_hier_rect_bounds = container.node().getBoundingClientRect();
 
+            // Don't render if panel is too narrow (collapsed or nearly collapsed)
+            if (concept_hier_rect_bounds.width < 50) {
+                return; // Exit early, don't try to render
+            }
+
             // Calculate SVG height based on number of cards
             const parents = currentData.parents || [];
             const children = currentData.children || [];
@@ -1645,7 +1655,7 @@ function render({ model, el }) {
         }
 
         // Listen for data from the table
-        tableDispatcher.on('hierarchy-data-ready.manager', (payload) => {
+        tableDispatcher.on('hierarchy-data-ready', (payload) => {
             if (!payload) {
                 // Clear
                 currentData = null;
@@ -1712,11 +1722,10 @@ function render({ model, el }) {
 
         let prevalence_dp = default_prevalence_dp;
 
-        // Create SVG root
         const svg = d3.create("svg")
             .attr("viewBox", `0 0 ${width} ${height}`)
             .attr("width", "100%")
-            .attr("height", height)
+            .attr("height", height)  // Keep initial height
             .attr("preserveAspectRatio", "xMidYMid meet")
             .style("display", "block");
 
@@ -1914,6 +1923,7 @@ function render({ model, el }) {
         function prepareItemData(item) {
             let keys = []; // Remove concept_code and concept_name from body
             let cohort_ids = item['source_cohorts'];
+            // console.log('prepareItemData item = ', item)
 
             // Add content based on mode
             if (isSingleCohort()) {
@@ -2025,9 +2035,6 @@ function render({ model, el }) {
                     const absoluteY = finalY + parentTransform.y;
 
                     if (isInDropZone(absoluteY, cardHeight)) {
-                        // console.log('setupDragBehavior old item = ', centerCard);
-                        // console.log('setupDragBehavior new item = ', item);
-
                         // Cancel any pending requests when selection changes
                         requestManager.cancelAll();
 
@@ -2045,28 +2052,33 @@ function render({ model, el }) {
                                 }
                             );
 
-                            // Update the current data with new data
-                            currentData = immediate_nodes_data;
-                            centerCard = immediate_nodes_data.caller_node || item;
-
-                            // Redraw with new data
-                            redrawHierarchyView();
-
-                        } catch (error) {
-                            if (error.message === 'Request cancelled') {
-                                // console.log('Immediate nodes request was cancelled');
-                            } else {
-                                console.error("Error fetching immediate nodes:", error);
-
-                                // Show error message in the panel
+                            // Check if request was cancelled
+                            if (immediate_nodes_data?.cancelled) {
+                                // Show default "No data to display" message
                                 d3.select(concept_hier_col.node()).selectAll('*').remove();
                                 d3.select(concept_hier_col.node())
                                     .append('p')
                                     .style('padding', '8px')
-                                    .style('color', '#f44336')
+                                    .style('color', '#666')
                                     .style('font-size', '12px')
-                                    .text(`Error: ${error.message || 'Failed to fetch immediate nodes'}`);
+                                    .text('No data to display.');
+                                return;
                             }
+
+                            // Update through the proper dispatch mechanism instead of directly
+                            // This ensures setupHierarchyViewManager handles the update correctly
+                            conceptsTableDispatcher.call("hierarchy-data-ready", null, {
+                                data: immediate_nodes_data,
+                                shortnames: [cohort1_shortname, cohort2_shortname]
+                            });
+
+                        } catch (error) {
+                            console.error("Error fetching immediate nodes:", error);
+
+                            // Show error message through dispatch
+                            conceptsTableDispatcher.call("hierarchy-data-ready", null, {
+                                error: error.message || 'Failed to fetch immediate nodes'
+                            });
                         }
                     } else {
                         // Return to original position
@@ -2397,6 +2409,11 @@ function render({ model, el }) {
             // Draw bottom section (children)
             const bottom = bottomLayer.append("g").attr("transform", `translate(${pad},${currentY})`);
             const bottomHeight = layoutCardsInGrid(bottom, children, width - 2 * pad, H3 - pad, true);
+            currentY += bottomHeight + pad; // Add bottom padding
+
+            // Update SVG height to fit all actual content
+            svg.attr("height", currentY)
+                .attr("viewBox", `0 0 ${width} ${currentY}`);
         }
 
         // Initial draw
@@ -2922,13 +2939,26 @@ function render({ model, el }) {
             // Find selected rows that are no longer visible
             const hidden_selected_rows = [...selected_rows].filter(rowId => !visibleRowIds.has(rowId));
 
-            // Remove hidden rows from selection
-            hidden_selected_rows.forEach(rowId => {
-                selected_rows.delete(rowId);
-            });
-
-            // If we had selections that are now hidden, update the UI
+            // If we had selections that are now hidden, notify and update the UI
             if (hidden_selected_rows.length > 0) {
+                // Find the actual row data for deselected rows
+                hidden_selected_rows.forEach(rowId => {
+                    // Find the row data in table_data
+                    const rowData = table_data.find(d => {
+                        const id = d.id || d.shortname || JSON.stringify(d);
+                        return id === rowId;
+                    });
+
+                    // Call the deselect callback if we found the data
+                    if (rowData) {
+                        onConceptTableRowSelect(rowData, false);
+                    }
+
+                    // Remove from selection set
+                    selected_rows.delete(rowId);
+                });
+
+                // Update visual indicators
                 rows_g.selectAll("g").classed("selected", false);
                 rows_g.selectAll(".row-border").remove();
             }
@@ -3154,6 +3184,25 @@ function render({ model, el }) {
                     }
                 );
 
+                // Check if request was cancelled
+                if (immediate_nodes_data?.cancelled) {
+                    // If user explicitly cancelled, deselect the row
+                    if (immediate_nodes_data.explicit) {
+                        // Find and deselect the row in the table
+                        const rowId = rowData.id || rowData.shortname || JSON.stringify(rowData);
+                        selected_rows.delete(rowId);
+                        rows_g.selectAll("g").classed("selected", false);
+                        rows_g.selectAll(".row-border").remove();
+
+                        // Close the panel
+                        dispatch.call("select-row", this, rowData, false);
+                    }
+
+                    // Show default "No data to display" message
+                    dispatch.call("hierarchy-data-ready", this, null);
+                    return;
+                }
+
                 // Dispatch the data - let someone else handle rendering
                 dispatch.call("hierarchy-data-ready", this, {
                     data: immediate_nodes_data,
@@ -3161,17 +3210,13 @@ function render({ model, el }) {
                 });
 
             } catch (error) {
-                if (error.message === 'Request cancelled') {
-                    // Dispatch null to show default message
-                    dispatch.call("hierarchy-data-ready", this, null);
-                } else {
-                    console.error("Error fetching immediate nodes:", error);
+                // Only real errors reach here now
+                console.error("Error fetching immediate nodes:", error);
 
-                    // Dispatch error info
-                    dispatch.call("hierarchy-data-ready", this, {
-                        error: error.message || 'Failed to fetch immediate nodes'
-                    });
-                }
+                // Dispatch error info
+                dispatch.call("hierarchy-data-ready", this, {
+                    error: error.message || 'Failed to fetch immediate nodes'
+                });
             }
         }
 
