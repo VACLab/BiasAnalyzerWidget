@@ -5,31 +5,110 @@
 }
 
 .vis-container {
+    display: flex;
+    flex-direction: column;
     align-items: center;
     border: 1px solid black;
     width: 100%;
+    height: 100%; /* Allow it to fill available space */
     font-size: 11px;
     font-family: sans-serif;
     padding: 5px;
-    overflow: visible;
+    box-sizing: border-box;
+    overflow: hidden; /* Prevent container from growing */
 }
 
 .row-container {
     display: flex;
+    flex-direction: row;
     justify-content: space-around;
     width: 100%;
-    padding: 5px 0 5px 0;
-    height: auto;
+    padding-top: 5px;
+    min-height: 0; /* Allow shrinking */
     overflow: hidden;
+}
+
+/* Make demographics row fixed height */
+.demographics-row {
+    flex: 0 0 auto;
+    height: auto;
+}
+
+/* Make concepts row grow to fill space */
+.concepts-row {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* Make concepts tables row grow within concepts column */
+.concepts-tables-row {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.concepts-ctrl-row {
+    gap: 10px;
+    align-items: center;
+    justify-content: flex-start;
 }
 
 .col-container {
     flex: 1;
     border: 1px solid lightgray;
-    width: 100%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+    box-sizing: border-box;
+    /* Scrollbar styling */
+    scrollbar-width: thin;
+    scrollbar-color: #888 #f1f1f1;
 }
 
-h1.tight-header,h2.tight-header {
+.col-container::-webkit-scrollbar {
+    height: 8px;
+    width: 8px;
+}
+
+.col-container::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.col-container::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+.col-container::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+.col-container > div {
+    flex: 0 0 auto;
+    overflow: auto;
+    min-width: 0;
+}
+
+.col-container.no-border, .row-container.no-border {
+    border: none;
+}
+
+/* Drag bar styling */
+.drag-bar {
+    flex: 0 0 5px;
+    background-color: #ddd;
+    cursor: col-resize;
+    min-width: 5px;
+}
+
+.drag-bar:hover {
+    background-color: #999;
+}
+
+h1.tight-header, h2.tight-header {
     margin: 0;
     line-height: 1;
 }
@@ -62,15 +141,15 @@ h1.tight-header,h2.tight-header {
 
 /* overall barchart size */
 .barchart{
-    font-size: 12px;
+    /*font-size: 14px;*/
     width: 100%;  /* allows resize to fit the page*/
     height: auto;
 }
 
 /* axis labels */
-.axis-label {
-    font-size: 14px;
-}
+/*.axis-label {*/
+    /*font-size: 14px;*/
+/*}*/
 /* lines and tick marks */
 .axis path,
 .axis line {
@@ -79,9 +158,9 @@ h1.tight-header,h2.tight-header {
     shape-rendering: crispEdges;
 }
 /* axis text */
-.axis text {
-    font-size: 14px;
-}
+/*.axis text {*/
+/*    font-size: 14px;*/
+/*}*/
 
 /* CONCEPTS TABLE */
 
@@ -105,8 +184,8 @@ h1.tight-header,h2.tight-header {
 /* concepts table row hover and select */
 
 .selected .cell-bg {
-    fill: #f8f9fa !important;
-    stroke: #ccc !important;
+    fill: #f0ffff !important;
+    /*stroke: #ccc !important;*/
 }
 
 .selected {
@@ -115,7 +194,7 @@ h1.tight-header,h2.tight-header {
 
 .row-border {
     fill: none;
-    stroke: #007bff;
+    stroke: #f0ffff;
     stroke-width: 2px;
     pointer-events: none;
 }

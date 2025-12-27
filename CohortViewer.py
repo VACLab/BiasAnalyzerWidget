@@ -1,19 +1,26 @@
-from statistics import median
-
+# from statistics import median
 import anywidget
 import traitlets as t
 import pathlib
-# import json # uncomment this for saving json to file
 from datetime import datetime, date
 from decimal import Decimal
 import numpy as np
-from statistics import mode
+import json
+# from copy import deepcopy
+import time
+# from statistics import mode
 # from biasanalyzer.background.threading_utils import run_in_background
 
 class CohortViewer(anywidget.AnyWidget):
     _esm = pathlib.Path(__file__).parent / "index.js"
     _css = pathlib.Path(__file__).parent / "index.css"
     initialized = t.Bool(default_value=False).tag(sync=True)
+    _conditionsHierarchy = None  # class object of the whole tree
+
+    log_debug_info = False  # change to true to write to the debug log
+    if log_debug_info:
+        log_file = open('./debug.log', 'a', buffering=1)  # Line buffered
+    log_timings = False  # change to true to print timings to jupyter
 
     # List of developer-only keys
     _devKeys = [
@@ -33,6 +40,212 @@ class CohortViewer(anywidget.AnyWidget):
             # Not a container - check if it's falsy
             return not bool(obj)
 
+    # Communication channels
+    request = t.Unicode('').tag(sync=True)
+    response = t.Unicode('').tag(sync=True)
+
+    def log(self, message):
+        if not self.log_debug_info:
+            return
+        import datetime
+        timestamp = datetime.datetime.now().strftime('%H:%M:%S.%f')[:-3]
+        self.log_file.write(f"[{timestamp}] {message}\n")
+        self.log_file.flush()
+
+    def log_object_type(self, msg, obj):
+        self.log(msg)
+        self.log(f"Type: {type(obj)}")
+        self.log(f"Type name: {type(obj).__name__}")
+        self.log(f"Value: {obj}")
+
+    def create_trait(self, name, trait_type, value):
+        if not value is None:
+            self.add_traits(**{name: trait_type.tag(sync=True)})
+            setattr(self, name, value)
+
+            import json
+
+    def log_format_tree(self, node, depth=0):
+        if not self.log_debug_info:
+            return
+        indent = "  " * depth
+        output = f"{indent}- {json.dumps(node, ensure_ascii=False)}\n"
+        # If node is a dict or list, traverse its children
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if isinstance(value, (dict, list)):
+                    output += self.log_format_tree(value, depth + 1)
+        elif isinstance(node, list):
+            for item in node:
+                output += self.log_format_tree(item, depth + 1)
+        self.log(output)
+
+    def _format_elapsed(self, seconds: float) -> str:
+        """Return a compact, human-friendly duration string."""
+        if seconds < 1e-3:
+            return f"{seconds * 1e6:,.0f} µs"
+        elif seconds < 1:
+            return f"{seconds * 1e3:,.2f} ms"
+        elif seconds < 60:
+            return f"{seconds:,.2f} s"
+        elif seconds < 3600:
+            m, s = divmod(seconds, 60)
+            return f"{int(m)}m {s:,.2f}s"
+        else:
+            h, rem = divmod(seconds, 3600)
+            m, s = divmod(rem, 60)
+            return f"{int(h)}h {int(m)}m {s:,.2f}s"
+
+    def log_time_diff(self, msg, start=None):
+        if not self.log_timings or start is None:
+            return
+        elapsed = time.perf_counter() - start
+        print(f" ⏱️ {msg} {self._format_elapsed(elapsed)}")
+
+    def set_time_now(self, msg):
+        if not self.log_timings:
+            return None
+        return time.perf_counter()
+
+    @t.observe('request')
+    def _handle_request(self, change):
+        """Handle incoming requests from JavaScript"""
+        # self.log(f'def _handle_request(self, change): {change}')
+        if not change['new']:
+            return
+
+        try:
+            # self.log(f'try to request data')
+            request_data = json.loads(change['new'])
+            request_id = request_data.get('id')
+            request_type = request_data.get('type')
+            params = request_data.get('params', {})
+
+            # Route to appropriate handler
+            result = self._process_request(request_type, params)
+
+            # Send response back
+            response_data = {
+                'id': request_id,
+                'type': request_type,
+                'data': result,
+                'success': True
+            }
+            self.response = json.dumps(response_data)
+            # self.log_format_tree(f'response = {self.response}')
+
+        except Exception as e:
+            # self.log(f'error: {e}')
+            # Send error response
+            response_data = {
+                'id': request_data.get('id'),
+                'type': request_data.get('type'),
+                'error': str(e),
+                'success': False
+            }
+            self.response = json.dumps(response_data)
+
+    def _process_request(self, request_type, params):
+        # self.log(f'processing request')
+        """Route requests to appropriate handlers"""
+        if request_type == 'get_parent_nodes':
+            return self._get_parent_nodes(params)
+        if request_type == 'get_child_nodes':
+            return self._get_child_nodes(params)
+        if request_type == 'get_immediate_nodes':
+            return self._get_immediate_nodes(params)
+        # ... other handlers
+        else:
+            # self.log(f'Raised ValueError: "Unknown request type: {request_type}"')
+            raise ValueError(f"Unknown request type: {request_type}")
+
+    def _get_child_nodes(self, params):
+        """Get list of children with first 2 levels of children only"""
+        # self.log(f'params: {params}')
+        node_id = params.get('node_id')
+        result = {'caller_node_id': node_id, 'children': []}
+        node = self._conditionsHierarchy.get_node(node_id)
+
+        # self.log(f'node.children: {node.children}')
+        for child_node in node.children:
+            # self.log(f'child_node: {child_node}')
+            child_dict = child_node.to_dict()
+            pruned_child = self._prune_tree(child_dict, max_depth=2)
+            # self.log(f'pruned_child: ', pruned_child)
+            result['children'].append(pruned_child)
+
+        # self.log(f'result: {result}')
+        return result
+
+    def _get_parent_nodes(self, params):
+        """Get parents with first 2 levels of children only"""
+        # self.log(f'params: {params}')
+        node_id = params.get('node_id')
+        parent_ids = params.get('parent_ids')
+
+        result = {'caller_node_id': node_id, 'parents': []}
+
+        for parent_id in parent_ids:
+            parent_node = self._conditionsHierarchy.get_node(parent_id)
+            parent_dict = parent_node.to_dict()
+
+            # Prune to 2 levels (parent + 2 child levels)
+            pruned_parent = self._prune_tree(parent_dict, max_depth=2)
+            result['parents'].append(pruned_parent)
+
+        return result
+
+    def _get_immediate_nodes(self, params):
+        # self.log(f'params: {params}')
+        caller_node_id = params.get('caller_node_id')
+        parent_ids = params.get('parent_ids')
+        caller_node = self._conditionsHierarchy.get_node(caller_node_id)
+        # self.log(f'caller_node: {caller_node}')
+        caller_dict = caller_node.to_dict(include_children = False)
+        # self.log(f'caller_dict: {caller_dict}')
+
+        result = {'caller_node': caller_dict, 'parents': [], 'children': []}
+
+        # self.log(f'parent_ids: {parent_ids}')
+        for parent_id in parent_ids:
+            parent_node = self._conditionsHierarchy.get_node(parent_id)
+            # self.log(f'parent_node: {parent_node}')
+            parent_dict = parent_node.to_dict()
+
+            # Prune to 2 levels (parent + 2 child levels)
+            pruned_parent = self._prune_tree(parent_dict, max_depth=0)
+            # self.log(f'pruned_parent_node: {parent_dict}')
+
+            result['parents'].append(pruned_parent)
+
+        for child_node in caller_node.children:
+            # self.log(f'child_node: {child_node}')
+            child_dict = child_node.to_dict()
+            pruned_child = self._prune_tree(child_dict, max_depth=0)
+            # self.log(f'pruned_child: ', pruned_child)
+            result['children'].append(pruned_child)
+
+        return result
+
+    def _prune_tree(self, node, max_depth=2, current_depth=0):
+        """Prune tree to max_depth levels (read-only, no copying needed)"""
+        # Fast: just create new dict structure with references
+        pruned_node = {k: v for k, v in node.items() if k != 'children'}
+
+        # Check if the original node has children
+        has_children_in_full_tree = 'children' in node and node['children'] and len(node['children']) > 0
+        pruned_node['hasChildren'] = has_children_in_full_tree
+
+        if current_depth < max_depth and has_children_in_full_tree:
+            pruned_node['children'] = [
+                self._prune_tree(child, max_depth, current_depth + 1)
+                for child in node['children']
+            ]
+        else:
+            pruned_node['children'] = []
+
+        return pruned_node
+
     # Convert non-JSON-serializable objects to JSON-compatible types
     def make_json_serializable(self, obj):
         if isinstance(obj, dict):
@@ -50,38 +263,30 @@ class CohortViewer(anywidget.AnyWidget):
 
     def __init__(
             self,
-            bias=None,
+            # bias=None,
             cohort1=None,
             cohort2=None,
             cohort1_shortname='study',
-            cohort2_shortname='baseline',
-            **kwargs
+            cohort2_shortname='baseline'
     ):
-        # Determine if developer kwargs were passed
-        # self.isJsonMode = any(k in kwargs and kwargs[k] is not None for k in CohortViewer._devKeys)
+        # print("=" * 60)  # separator for python console log
 
-        # Require cohort1 if no developer data
-        # if not self.isJsonMode and cohort1 is None:
-        #     raise ValueError(
-        #         "Cohorts cannot be empty. At least one cohort is needed."
-        #     )
+        init_start = self.set_time_now("CohortViewer.__init__ started")
+        super_start = self.set_time_now("CohortViewer.super().__init__() started")
 
         super().__init__()
+        self.log_time_diff("super().__init__() took ", super_start)
 
         # READ PARAMETERS
 
         # end-user parameters
-        self._bias = bias  # NOTE: bias does not need to go to javascript, so no traitlet needed
+        # self._bias = bias  # NOTE: bias does not need to go to javascript, so no traitlet needed
         self._cohort1 = cohort1
         self._cohort2 = cohort2
         self._cohort1Shortname = cohort1_shortname
         self._cohort2Shortname = cohort2_shortname
         self.initialized = True
-
-    def create_trait(self, name, trait_type, value):
-        if not value is None:
-            self.add_traits(**{name: trait_type.tag(sync=True)})
-            setattr(self, name, value)
+        self.log_time_diff("__init__ time taken: ", init_start)
 
     @t.observe('initialized')
     def _on_initialized(self, change):
@@ -90,6 +295,7 @@ class CohortViewer(anywidget.AnyWidget):
 
     def on_initialized(self):
         # Perform actions that require the widget to be fully initialized
+        # print("on_initialized called")
         self.init_widget()
 
     @staticmethod
@@ -125,6 +331,22 @@ class CohortViewer(anywidget.AnyWidget):
                 new_node['depth'] = depth
                 keep_nodes.append(new_node)
 
+        def get_node_count(node, cohort_id):
+            c = node.get_metrics(cohort_id)
+            # if the cohort doesn't exist for this node, then set it to zero
+            if not c or 'count' not in c:
+                c['count'] = 0
+            return c['count']
+
+        def _get_total_count(stats):
+            """Safely extract 'total_count' from stats[0]. Returns None if unavailable."""
+            if not stats:  # None or empty
+                return 0
+            first = stats[0]
+            if first is None or not isinstance(first, dict):
+                return 0
+            return first.get('total_count')
+
         def get_node_diff(node):
             c1 = node.get_metrics(cohort_id_1)
             c2 = node.get_metrics(cohort_id_2)
@@ -138,6 +360,13 @@ class CohortViewer(anywidget.AnyWidget):
         # TODO: Change this so that we can recurse even if there is not a significant difference,
         #       so that we can scent/hint at lower significances
         def recurse(node, depth, cohort1_nobs, cohort2_nobs = 0):
+            count1 = get_node_count(node, cohort_id_1)
+            count2 = get_node_count(node, cohort_id_2)
+            cohort1_total = _get_total_count(self._cohort1Stats)
+            cohort2_total = _get_total_count(self._cohort2Stats)
+
+            if (count1 < cohort1_total * 0.01) or (cohort_id_2 > 0 and count2 < cohort1_total * 0.01):
+                return
 
             children = node.children
 
@@ -154,7 +383,7 @@ class CohortViewer(anywidget.AnyWidget):
                     children_diffs.append(get_node_diff(child))
                 # need at least 2 values for meaningful variance
                 if len(children_diffs) < 2:
-                    add_keep_node(node, depth)
+                    add_keep_node(node, depth)  # keep the parent
                     return
                 # get the variance in differences across child nodes
                 var =  np.var(children_diffs)
@@ -168,7 +397,7 @@ class CohortViewer(anywidget.AnyWidget):
                     children_prevs.append(child.get_metrics(self.this_widget_cohort1_id)['prevalence'])
                 # need at least 2 values for meaningful variance
                 if len(children_prevs) < 2:
-                    add_keep_node(node, depth)
+                    add_keep_node(node, depth)  # keep the parent
                     return
                 # get the variance in differences across child nodes
                 var =  np.var(children_prevs)
@@ -216,27 +445,67 @@ class CohortViewer(anywidget.AnyWidget):
         return keep_nodes
 
     def init_widget(self):
-        # if we are not injecting json, get the datasets
-        # we are also serializing so that object fields (e.g., dates) can be passed to javascript
-        # if not self.isJsonMode:
+        init_widget_start = self.set_time_now("init_widget started")
+
+        t0 = self.set_time_now("\nFetching and serializing cohort 1 metadata ")
         self._cohort1Metadata = self.make_json_serializable(self._cohort1.metadata)
+        self.log_time_diff("cohort1 metadata time taken: ", t0)
+
+        t0 = self.set_time_now("\nFetching and serializing cohort 1 stats ")
         self._cohort1Stats = self.make_json_serializable(self._cohort1.get_stats())
+        self.log_time_diff("cohort1 stats time taken: ", t0)
+
+        t0 = self.set_time_now("\nFetching and serializing cohort 1 race stats ")
         self._raceStats1 = self.make_json_serializable(self._cohort1.get_stats('race'))
+        self.log_time_diff("cohort1 race stats time taken: ", t0)
+
+        t0 = self.set_time_now("\nFetching and serializing cohort 1 ethnicity stats ")
         self._ethnicityStats1 = self.make_json_serializable(self._cohort1.get_stats('ethnicity'))
+        self.log_time_diff("cohort1 ethnicity stats time taken: ", t0)
+
+        t0 = self.set_time_now("\nFetching and serializing cohort 1 gender stats ")
         self._genderDist1 = self.make_json_serializable(self._cohort1.get_distributions('gender'))
+        self.log_time_diff("cohort1 gender stats time taken: ", t0)
+
+        t0 = self.set_time_now("\nFetching and serializing cohort 1 age stats ")
         self._ageDist1 = self.make_json_serializable(self._cohort1.get_distributions('age'))
+        self.log_time_diff("cohort1 age stats time taken: ", t0)
+
+        t0 = self.set_time_now("\nFetching concept stats ")
         cond1, cond_hier1 = self._cohort1.get_concept_stats()
+        self.log_time_diff("cohort1 concept stats time taken: ", t0)
         self._conditionsHierarchy = cond_hier1
         # print(f'self._conditionsHierarchy for cohort1 type = {type(self._conditionsHierarchy)}')
 
         if self._cohort2 is not None:
+            t0 = self.set_time_now("\nFetching and serializing cohort 2 metadata ")
             self._cohort2Metadata = self.make_json_serializable(self._cohort2.metadata)
+            self.log_time_diff("cohort2 metadata time taken: ", t0)
+
+            t0 = self.set_time_now("\nFetching and serializing cohort 2 stats ")
             self._cohort2Stats = self.make_json_serializable(self._cohort2.get_stats())
+            self.log_time_diff("cohort2 stats time taken: ", t0)
+
+            t0 = self.set_time_now("\nFetching and serializing cohort 2 race stats ")
             self._raceStats2 = self.make_json_serializable(self._cohort2.get_stats('race'))
+            self.log_time_diff("cohort2 race stats time taken: ", t0)
+
+            t0 = self.set_time_now("\nFetching and serializing cohort 2 ethnicity stats ")
             self._ethnicityStats2 = self.make_json_serializable(self._cohort2.get_stats('ethnicity'))
+            self.log_time_diff("cohort2 ethnicity stats time taken: ", t0)
+
+            t0 = self.set_time_now("\nFetching and serializing cohort 2 gender stats ")
             self._genderDist2 = self.make_json_serializable(self._cohort2.get_distributions('gender'))
+            self.log_time_diff("cohort2 gender stats time taken: ", t0)
+
+            t0 = self.set_time_now("\nFetching and serializing cohort 2 age stats ")
             self._ageDist2 = self.make_json_serializable(self._cohort2.get_distributions('age'))
+            self.log_time_diff("cohort2 age stats time taken: ", t0)
+
+            t0 = self.set_time_now("\nFetching concept stats ")
             cond2, cond_hier2 = self._cohort2.get_concept_stats()
+            self.log_time_diff("cohort2 concept stats time taken: ", t0)
+
             self._conditionsHierarchy = self._conditionsHierarchy.union(cond_hier2)
             # print(f'self._conditionsHierarchy union type = {type(self._conditionsHierarchy)}')
         else:
@@ -252,6 +521,8 @@ class CohortViewer(anywidget.AnyWidget):
         # print(f'root = {root}')
 
         # Give data to traitlets, mostly as lists of dictionaries
+
+        t0 = self.set_time_now("\nPassing data to traitlets ")
 
         # print(f'self._cohort1Metadata = {self._cohort1Metadata}')
         self.create_trait('_cohort1Metadata', t.Dict(), self._cohort1Metadata)
@@ -301,3 +572,5 @@ class CohortViewer(anywidget.AnyWidget):
         self.create_trait('_interestingConditions', t.List(t.Dict()),  self._interestingConditions)
 
         # print("initialization completed")
+        self.log_time_diff("Data passed to traitlets time taken: ", t0)
+        self.log_time_diff("init widget completed", init_widget_start)
