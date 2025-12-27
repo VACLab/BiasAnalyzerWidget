@@ -468,11 +468,13 @@ function render({ model, el }) {
     }
 
     function getCohortItemCount(item, cohort_id){
-        return item['metrics'][cohort_id].count;
+        const result = cohort_id != null ? item['metrics'][cohort_id].count : 0;
+        return result;
     }
 
     function getCohortItemPrevalence(item, cohort_id){
-        return item['metrics'][cohort_id].prevalence;
+        const result = cohort_id != null ? item['metrics'][cohort_id].prevalence : 0;
+        return result;
     }
 
     // converts timestamp to formatted date 'YYYY-MM-DD'
@@ -1396,7 +1398,7 @@ function render({ model, el }) {
             .attr('dx', '0.8em')
             .attr('dy', '0.15em')
             .attr('font-size', font_size)
-            .attr('transform', 'rotate(45)');
+            .attr('transform', 'rotate(20)');
 
         // svg.append('text')
         //     .attr('class', 'axis-label')
@@ -2684,20 +2686,14 @@ function render({ model, el }) {
             throw new Error("ConceptsTable: table_data is empty.");
         }
 
-        // console.log('headers_text = ', headers_text);
+        console.log('headers_text = ', headers_text);
 
         let columns_data;
         if(isSingleCohort()){
-            // columns_data = [
-            //     { text: headers_text[7], field: "depth", x: 0, width: 60, type: 'text' },
-            //     { text: headers_text[2], field: "concept_code",  x: 60,   width: 160 },
-            //     { text: headers_text[1], field: "concept_name",  x: 220, width: 530 },
-            //     { text: headers_text[8], field: "count_in_cohort", x: 750, width: 160 },
-            //     { text: headers_text[7], field: "prevalence", x: 910, width: 160 }
-            // ];
             columns_data = [
-                { text: headers_text[2], field: "concept_code",  x: 0,   width: 160 },
-                { text: headers_text[1], field: "concept_name",  x: 160, width: 590 },
+                { text: headers_text[6], field: "depth", x: 0, width: 60, type: 'text' },
+                { text: headers_text[2], field: "concept_code",  x: 60,   width: 160 },
+                { text: headers_text[1], field: "concept_name",  x: 220, width: 530 },
                 { text: headers_text[8], field: "count_in_cohort", x: 750, width: 160 },
                 { text: headers_text[7], field: "prevalence", x: 910, width: 160 }
             ];
