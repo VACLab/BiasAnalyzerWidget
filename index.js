@@ -1400,13 +1400,6 @@ function render({ model, el }) {
             .attr('font-size', font_size)
             .attr('transform', 'rotate(20)');
 
-        // svg.append('text')
-        //     .attr('class', 'axis-label')
-        //     .attr('x', width / 2)
-        //     .attr('y', height - 20)
-        //     .style('text-anchor', 'middle')
-        //     .text(xlabel);
-
         // Y-axis group
         const yAxisGroup = svg.append('g')
             .attr('transform', `translate(${margin.left}, 0)`)
@@ -1701,7 +1694,7 @@ function render({ model, el }) {
     }
 
     function HierarchyView(data, { width = 960, height = 720, shortnames = [], dispatcher = null } = {}){
-        // console.log('HierarchyView data = ', data);
+        console.log('HierarchyView data = ', data);
 
         if (isNullOrEmpty(shortnames))
             shortnames = ['study', 'baseline'];
