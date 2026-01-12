@@ -1219,7 +1219,7 @@ function render({ model, el }) {
             .style('flex-direction', 'column')
             .style('gap', '10px'); // space between cohort blocks
 
-        const columns = [
+        const column_defs = [
             ['total_count'],
             ['earliest_start_date', 'latest_start_date', 'earliest_end_date', 'latest_end_date'],
             ['min_duration_days', 'max_duration_days', 'avg_duration_days'],
@@ -1256,8 +1256,8 @@ function render({ model, el }) {
                 .style('display', 'flex')
                 .style('gap', '30px');
 
-            // Populate columns
-            columns.forEach(colKeys => {
+            // Populate column_defs
+            column_defs.forEach(colKeys => {
                 const col = colContainer.append('div')
                     .style('display', 'flex')
                     .style('flex-direction', 'column')
@@ -1694,7 +1694,7 @@ function render({ model, el }) {
     }
 
     function HierarchyView(data, { width = 960, height = 720, shortnames = [], dispatcher = null } = {}){
-        console.log('HierarchyView data = ', data);
+        // console.log('HierarchyView data = ', data);
 
         if (isNullOrEmpty(shortnames))
             shortnames = ['study', 'baseline'];
@@ -1714,6 +1714,8 @@ function render({ model, el }) {
         // State
         let centerCard = data.caller_node || null;
         let currentData = data; // Store current data reference
+        // console.log('currentData = ', currentData);
+
 
         let prevalence_dp = default_prevalence_dp;
 
@@ -1855,14 +1857,14 @@ function render({ model, el }) {
                     .text(line3);
             }
 
-            // SNOMED code line
+            // Concept code line
             currentHeaderY += headerLineSpacing;
             headerGroup.append('text')
                 .attr('x', 0)
                 .attr('y', currentHeaderY)
                 .attr('font-size', default_font_size)
                 .attr('fill', '#666')
-                .text(`(SNOMED Code: ${d.concept_code})`);
+                .text(`(Concept Code: ${d.concept_code})`);
 
             // Calculate separator position (accounting for wrapped header)
             const separatorY = currentHeaderY + separatorMargin;
@@ -2038,6 +2040,7 @@ function render({ model, el }) {
                                 "get_immediate_nodes",
                                 {
                                     caller_node_id: item.concept_id,
+                                    caller_node_depth: item.depth,
                                     parent_ids: item.parent_ids
                                 },
                                 {
@@ -2318,6 +2321,35 @@ function render({ model, el }) {
 
         // Redraw the entire view with
         function redrawHierarchyView() {
+
+            /**
+             * Returns 'N/A' if the array is missing/empty.
+             * Returns 'root' if depth === 0.
+             * Otherwise returns the numeric/string depth (or 'N/A' if undefined/null).
+             *
+             * @param {object} data - The object that contains the array.
+             * @param {string} prop - The property name of the array (e.g., 'parents').
+             */
+            function formatDepth(data, prop) {
+                const value = data?.[prop];
+
+                // Helper to convert a candidate to the desired output
+                const format = (depth) => (depth === 0 ? 'root' : depth ?? 'N/A');
+
+                // Object/dictionary case
+                if (value && !Array.isArray(value) && typeof value === 'object') {
+                    return format(value.depth);
+                }
+
+                // Array case (first item)
+                if (Array.isArray(value) && value.length > 0) {
+                    return format(value[0]?.depth);
+                }
+
+                // Missing or empty
+                return 'N/A';
+            }
+
             // Clear all layers
             topLayer.selectAll("*").remove();
             middleLayer.selectAll("*").remove();
@@ -2336,6 +2368,8 @@ function render({ model, el }) {
             const parents = (currentData.parents || []).filter(p => p.concept_id !== centerCardId);
             const children = (currentData.children || []).filter(c => c.concept_id !== centerCardId);
 
+            console.log('currentData = ', currentData)
+
             let currentY = pad;
 
             // Add "PARENTS" label
@@ -2345,7 +2379,7 @@ function render({ model, el }) {
                 .attr("font-size", 12)
                 .attr("font-weight", "bold")
                 .attr("fill", "#333")
-                .text("PARENTS");
+                .text(`PARENTS (Hierarchy Depth: ${formatDepth(currentData, 'parents')})`);
 
             currentY += labelHeight;
 
@@ -2371,7 +2405,8 @@ function render({ model, el }) {
                 .attr("font-size", 12)
                 .attr("font-weight", "bold")
                 .attr("fill", "#333")
-                .text("CURRENT CONCEPT");
+                .text(`CURRENT CONCEPT (Hierarchy Depth: ${formatDepth(currentData, 'caller_node')})`);
+
 
             currentY += labelHeight;
 
@@ -2397,7 +2432,7 @@ function render({ model, el }) {
                 .attr("font-size", 12)
                 .attr("font-weight", "bold")
                 .attr("fill", "#333")
-                .text("CHILDREN");
+                .text(`CHILDREN (Hierarchy Depth: ${formatDepth(currentData, 'children')})`);
 
             currentY += labelHeight;
 
@@ -2451,7 +2486,7 @@ function render({ model, el }) {
         let page_size = pageSize;
 
         function getPrevDiffTooltipContent(d, series_name){
-            const heading = `<strong>${d.concept_name}</strong><br>(SNOMED Code: ${d.concept_code})<hr>`;
+            const heading = `<strong>${d.concept_name}</strong><br>(Concept Code: ${d.concept_code})<hr>`;
             let msg = `(no difference)`;
             if(series_name !== "")
                 msg = `(higher in ${series_name})`;
@@ -2463,7 +2498,7 @@ function render({ model, el }) {
             // console.log('d = ', d);
             // console.log('colfield = ', colfield);
 
-            const heading = `<strong>${d.concept_name}</strong><br>(SNOMED Code: ${d.concept_code})<hr>`;
+            const heading = `<strong>${d.concept_name}</strong><br>(Concept Code: ${d.concept_code})<hr>`;
             // default to cohort 1, unless we know it is 2
             let cohort = 1;
             if (colfield.includes('2'))
@@ -2568,7 +2603,7 @@ function render({ model, el }) {
             }
 
             // Clear other column sort indicators
-            columns_data.forEach(col => {
+            column_defs.forEach(col => {
                 if (col !== d) {
                     col.sortDirection = null;
                 }
@@ -2577,7 +2612,7 @@ function render({ model, el }) {
             // Update sort indicators using D3 data join
             headers_g.selectAll(".sort-indicator")
                 .text((d, i) => {
-                    const col = columns_data[i];
+                    const col = column_defs[i];
                     if (col.sortDirection === "asc") return "▲";
                     if (col.sortDirection === "desc") return "▼";
                     return "";
@@ -2679,11 +2714,11 @@ function render({ model, el }) {
             throw new Error("ConceptsTable: table_data is empty.");
         }
 
-        console.log('headers_text = ', headers_text);
+        // console.log('headers_text = ', headers_text);
 
-        let columns_data;
+        let column_defs;
         if(isSingleCohort()){
-            columns_data = [
+            column_defs = [
                 { text: headers_text[6], field: "depth", x: 0, width: 60, type: 'text' },
                 { text: headers_text[2], field: "concept_code",  x: 60,   width: 160 },
                 { text: headers_text[1], field: "concept_name",  x: 220, width: 530 },
@@ -2692,7 +2727,7 @@ function render({ model, el }) {
             ];
         }
         else{
-            columns_data = [
+            column_defs = [
                 { text: headers_text[6], field: "depth", x: 0, width: 60, type: 'text' },
                 { text: headers_text[2], field: "concept_code", x: 60, width: 140, type: 'text' },
                 { text: headers_text[1], field: "concept_name", x: 200, width: 350, type: 'text' },
@@ -2702,9 +2737,9 @@ function render({ model, el }) {
             ];
         }
 
-        const total_table_width = d3.sum(columns_data, d => d.width);
+        const total_table_width = d3.sum(column_defs, d => d.width);
 
-        // console.log('columns_data', columns_data);
+        // console.log('column_defs', column_defs);
 
         const headers_svg = table_wrapper.append("svg")
             .attr("width", total_table_width)
@@ -2714,7 +2749,7 @@ function render({ model, el }) {
         const headers_g = headers_svg.append("g");
 
         const header_g = headers_g.selectAll("g")
-            .data(columns_data)
+            .data(column_defs)
             .enter()
             .append("g")
             .attr("transform", d => `translate(${d.x},0)`);
@@ -2815,7 +2850,7 @@ function render({ model, el }) {
 
                     // Recalculate x positions for all columns after this one
                     let x = 0;
-                    columns_data.forEach(col => {
+                    column_defs.forEach(col => {
                         col.x = x;
                         x += col.width;
                     });
@@ -2828,7 +2863,7 @@ function render({ model, el }) {
                         .attr("x", d => d.width - 15);
 
                     body_svg.selectAll(".cell").each(function(d, i) {
-                        const col = columns_data[i % columns_data.length];
+                        const col = column_defs[i % column_defs.length];
                         d3.select(this)
                             .attr("transform", `translate(${col.x},0)`)
                             .select(".cell-bg")
@@ -2836,7 +2871,7 @@ function render({ model, el }) {
                     });
 
                     // Update body and header SVG width
-                    const total_width = d3.sum(columns_data, c => c.width);
+                    const total_width = d3.sum(column_defs, c => c.width);
                     body_svg.attr("width", total_width);
                     headers_svg.attr("width", total_width);
                     break;
@@ -3030,7 +3065,7 @@ function render({ model, el }) {
             }
 
             // per-row, per-column cells
-            columns_data.forEach(col => {
+            column_defs.forEach(col => {
                 const cell = row.append("g")
                     .attr("class", "cell")
                     .attr("transform", `translate(${col.x},0)`);
@@ -3164,6 +3199,7 @@ function render({ model, el }) {
                     "get_immediate_nodes",
                     {
                         caller_node_id: rowData.concept_id,
+                        caller_node_depth: rowData.depth,
                         parent_ids: rowData.parent_ids
                     },
                     {
@@ -3332,14 +3368,14 @@ function render({ model, el }) {
         // Initialize with descending sort on difference_in_prevalence if we have comparison data
         // or on prevalence for single dataset tables
         if (!isSingleCohort()) {
-            const diffColumn = columns_data.find(col => col.field === "difference_in_prevalence");
+            const diffColumn = column_defs.find(col => col.field === "difference_in_prevalence");
             if (diffColumn) {
                 diffColumn.sortDirection = "desc";
                 handleSort(diffColumn, true); // Skip toggle for initialization
             }
         } else {
             // For single dataset, sort by prevalence (which uses a function field)
-            const prevalenceColumn = columns_data.find(col =>
+            const prevalenceColumn = column_defs.find(col =>
                 typeof col.field === "function" && col.field.toString().includes("prevalence")
             );
             if (prevalenceColumn) {
