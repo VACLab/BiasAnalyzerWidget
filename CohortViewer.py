@@ -65,7 +65,7 @@ class CohortViewer(anywidget.AnyWidget):
 
             import json
 
-    def log_format_tree(self, node, depth=0):
+    def log_tree(self, node, depth=0):
         if not self.log_debug_info:
             return
         indent = "  " * depth
@@ -74,10 +74,10 @@ class CohortViewer(anywidget.AnyWidget):
         if isinstance(node, dict):
             for key, value in node.items():
                 if isinstance(value, (dict, list)):
-                    output += self.log_format_tree(value, depth + 1)
+                    output += self.log_tree(value, depth + 1)
         elif isinstance(node, list):
             for item in node:
-                output += self.log_format_tree(item, depth + 1)
+                output += self.log_tree(item, depth + 1)
         self.log(output)
 
     def _format_elapsed(self, seconds: float) -> str:
@@ -202,6 +202,7 @@ class CohortViewer(anywidget.AnyWidget):
         caller_node = self._conditionsHierarchy.get_node(caller_node_id)
         # self.log(f'caller_node: {caller_node}')
         caller_dict = caller_node.to_dict(include_children = False)
+        caller_dict['depth'] = params.get('caller_node_depth')
         # self.log(f'caller_dict: {caller_dict}')
 
         result = {'caller_node': caller_dict, 'parents': [], 'children': []}
@@ -214,7 +215,9 @@ class CohortViewer(anywidget.AnyWidget):
 
             # Prune to 2 levels (parent + 2 child levels)
             pruned_parent = self._prune_tree(parent_dict, max_depth=0)
-            # self.log(f'pruned_parent_node: {parent_dict}')
+            # don't drop below 0
+            pruned_parent['depth'] = caller_dict['depth'] - 1 if caller_dict['depth'] > 0 else 0
+            # self.log(f'pruned_parent_node: {pruned_parent}')
 
             result['parents'].append(pruned_parent)
 
@@ -222,6 +225,7 @@ class CohortViewer(anywidget.AnyWidget):
             # self.log(f'child_node: {child_node}')
             child_dict = child_node.to_dict()
             pruned_child = self._prune_tree(child_dict, max_depth=0)
+            pruned_child['depth'] = caller_dict['depth'] + 1
             # self.log(f'pruned_child: ', pruned_child)
             result['children'].append(pruned_child)
 
