@@ -8,7 +8,6 @@ import numpy as np
 import json
 # from copy import deepcopy
 import time
-# from statistics import mode
 # from biasanalyzer.background.threading_utils import run_in_background
 
 class CohortViewer(anywidget.AnyWidget):
@@ -369,7 +368,8 @@ class CohortViewer(anywidget.AnyWidget):
             cohort1_total = _get_total_count(self._cohort1Stats)
             cohort2_total = _get_total_count(self._cohort2Stats)
 
-            if (count1 < cohort1_total * 0.01) or (cohort_id_2 > 0 and count2 < cohort1_total * 0.01):
+            # discard nodes with low counts in either cohort
+            if (count1 < cohort1_total * 0.01) or (cohort_id_2 > 0 and count2 < cohort2_total * 0.01):
                 return
 
             children = node.children
@@ -409,6 +409,11 @@ class CohortViewer(anywidget.AnyWidget):
             vars.append(var)
 
             # if low variance, keep the parent
+            # NOTE: threshold is selected by trial-and-error to make the number of table rows approximately 10%
+            # of the total number of rows, based on the data used during development. The actual effect would differ
+            # based on the variance range in the datasets being used.
+            # Uncomment the lines of code below labelled "info for knowing what to set the threshold to" to view the
+            # variance in the datasets.
             threshold = 2e-5
             if var <= threshold:
                 add_keep_node(node, depth)  # keep the parent
@@ -431,6 +436,7 @@ class CohortViewer(anywidget.AnyWidget):
             recurse(self._conditionsHierarchy.get_root_nodes()[0], 0, self._cohort1Stats[0]['total_count'])
 
         # info for knowing what to set the threshold to
+        # from statistics import mode
         # print(f'vars count = {len(vars)}')
         # non_zero_vars = [x for x in vars if x != 0]
         # print(f'non_zero_vars count = {len(non_zero_vars)}')
