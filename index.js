@@ -470,8 +470,8 @@ function render({ model, el }) {
     function getCohortMetrics(index, item) {
         // Note: we cannot use item.source_cohorts here because we need to know the order
         //       in which they were passed to the widget
-        if (index < 0 || index >= cohortIds.length) {
-            return null;
+        if (index < 0 || index >= item.source_cohorts.length || index >= cohortIds.length) {
+            return [0, 0];
         }
         return item.metrics[cohortIds[index]];
     }
@@ -1905,7 +1905,7 @@ function render({ model, el }) {
                     .text(makeKeyWords(key, shortnames[0], shortnames[1]) + ':');
 
                 let value = d[key] !== undefined ? d[key] : '—';
-                if (key.includes('prevalence'))
+                if (key.includes('prevalence') && value > 0)
                     value = value.toFixed(prevalence_dp);
 
                 rowGroup.append('text')
