@@ -13,7 +13,7 @@ import time
 class CohortViewer(anywidget.AnyWidget):
     _esm = pathlib.Path(__file__).parent / "index.js"
     _css = pathlib.Path(__file__).parent / "index.css"
-    initialized = t.Bool(default_value=False).tag(sync=True)
+    _initialized = t.Bool(default_value=False).tag(sync=True)
     _conditionsHierarchy = None  # class object of the whole tree
 
     log_debug_info = False  # change to true to write to the debug log
@@ -288,16 +288,16 @@ class CohortViewer(anywidget.AnyWidget):
         self._cohort2 = cohort2
         self._cohort1Shortname = cohort1_shortname
         self._cohort2Shortname = cohort2_shortname
-        self.initialized = True
+        self._initialized = True
         self.log_time_diff("__init__ time taken: ", init_start)
 
-    @t.observe('initialized')
+    @t.observe('_initialized')
     def _on_initialized(self, change):
         if change['new']:
             self.on_initialized()
 
     def on_initialized(self):
-        # Perform actions that require the widget to be fully initialized
+        # Perform actions that require the widget to be fully _initialized
         # print("on_initialized called")
         self.init_widget()
 
@@ -398,7 +398,7 @@ class CohortViewer(anywidget.AnyWidget):
                 for child in node.children:
                     # print(f'child type = {type(child)}')
                     # return
-                    children_prevs.append(child.get_metrics(self.this_widget_cohort1_id)['prevalence'])
+                    children_prevs.append(child.get_metrics(self._cohort1.cohort_id)['prevalence'])
                 # need at least 2 values for meaningful variance
                 if len(children_prevs) < 2:
                     add_keep_node(node, depth)  # keep the parent
@@ -564,14 +564,12 @@ class CohortViewer(anywidget.AnyWidget):
             self.create_trait('_ageDist2', t.List(t.Dict()), self._ageDist2)
             self.create_trait('_cohort2Shortname', t.Unicode(), self._cohort2Shortname)
 
-        self.this_widget_cohort1_id = self._cohort1.cohort_id
         if not self.is_empty(self._cohort2):
-            self.this_widget_cohort2_id = self._cohort2.cohort_id
             # here we are comparing 2 cohorts
-            self._interestingConditions = self.find_interesting_conditions(self.this_widget_cohort1_id, self.this_widget_cohort2_id)
+            self._interestingConditions = self.find_interesting_conditions(self._cohort1.cohort_id, self._cohort2.cohort_id)
         else:
             # here there is just one cohort
-            self._interestingConditions = self.find_interesting_conditions(self.this_widget_cohort1_id)
+            self._interestingConditions = self.find_interesting_conditions(self._cohort1.cohort_id)
 
         # print('self._interestingConditions', self._interestingConditions)
         # print(f"interesting_conditions count = {len(self._interestingConditions)}")
@@ -580,6 +578,14 @@ class CohortViewer(anywidget.AnyWidget):
         # self._interesting conditions is a list of dictionaries to pass to javascript
         # this means that self._conditionsHierarchy can stay as a list of nodes
         self.create_trait('_interestingConditions', t.List(t.Dict()),  self._interestingConditions)
+
+        # this is the cohort ids in the order in which thet were passed
+        # this is needed because,although a node's source_cohorts lists the cohort ids being used,
+        # it does not tell us the order
+        self.cohortIds = [self._cohort1.cohort_id]
+        if self._cohort2 is not None:
+            self.cohortIds.append(self._cohort2.cohort_id)
+        self.create_trait('_cohortIds', t.List(),  self.cohortIds)
 
         # print("initialization completed")
         self.log_time_diff("Data passed to traitlets time taken: ", t0)

@@ -467,14 +467,13 @@ function render({ model, el }) {
     `;
     }
 
-    function getCohortItemCount(item, cohort_id){
-        const result = cohort_id != null ? item['metrics'][cohort_id].count : 0;
-        return result;
-    }
-
-    function getCohortItemPrevalence(item, cohort_id){
-        const result = cohort_id != null ? item['metrics'][cohort_id].prevalence : 0;
-        return result;
+    function getCohortMetrics(index, item) {
+        // Note: we cannot use item.source_cohorts here because we need to know the order
+        //       in which they were passed to the widget
+        if (index < 0 || index >= cohortIds.length) {
+            return null;
+        }
+        return item.metrics[cohortIds[index]];
     }
 
     // converts timestamp to formatted date 'YYYY-MM-DD'
@@ -612,6 +611,11 @@ function render({ model, el }) {
 
     var cond_hier = model.get('_interestingConditions');
     // console.log('cond_hier', cond_hier);
+
+    // this is the cohort ids in the order in which thet were passed
+    // this is needed because, although a node's source_cohorts lists the cohort ids being used,
+    // it does not tell us the order
+    var cohortIds = model.get('_cohortIds');
 
     race_stats1 = renameKeys(race_stats1, ['race', 'race_count'], ['category', 'value']);
     ethnicity_stats1 = renameKeys(ethnicity_stats1, ['ethnicity', 'ethnicity_count'], ['category', 'value']);
@@ -1921,18 +1925,17 @@ function render({ model, el }) {
             let keys = []; // Remove concept_code and concept_name from body
             let cohort_ids = item['source_cohorts'];
             // console.log('prepareItemData item = ', item)
-
             // Add content based on mode
             if (isSingleCohort()) {
                 keys = keys.concat(['count_in_cohort', 'prevalence']);
-                item['count_in_cohort'] = getCohortItemCount(item, cohort_ids[0]);
-                item['prevalence'] = getCohortItemPrevalence(item, cohort_ids[0]);
+                item['count_in_cohort'] = getCohortMetrics(0, item).count;
+                item['prevalence'] = getCohortMetrics(0, item).prevalence;
             } else {
                 keys = keys.concat(['cohort1_count', 'cohort1_prevalence', 'difference_in_prevalence', 'cohort2_count', 'cohort2_prevalence']);
-                item['cohort1_count'] = getCohortItemCount(item, cohort_ids[0]);
-                item['cohort1_prevalence'] = getCohortItemPrevalence(item, cohort_ids[0]);
-                item['cohort2_count'] = getCohortItemCount(item, cohort_ids[1]);
-                item['cohort2_prevalence'] = getCohortItemPrevalence(item, cohort_ids[1]);
+                item['cohort1_count'] = getCohortMetrics(0, item).count;
+                item['cohort1_prevalence'] = getCohortMetrics(0, item).prevalence;
+                item['cohort2_count'] = getCohortMetrics(1, item).count;
+                item['cohort2_prevalence'] = getCohortMetrics(1, item).prevalence;
                 item['difference_in_prevalence'] = Math.abs(item['cohort1_prevalence'] - Math.abs(item['cohort2_prevalence']));
             }
 
@@ -2171,55 +2174,6 @@ function render({ model, el }) {
                     .attr("x", Math.max(availableWidth / 2, 50))
                     .attr("y", 30)
                     .attr("text-anchor", "middle")
-                    .attr("font-size", 12)
-                    .attr("fill", "#999")
-                    .text("No data to show");
-                return 50; // Return minimal height for empty section
-            }
-
-            // Prepare first item to determine keys and calculate height once
-            const firstItem = items[0];
-            const keys = prepareItemData(firstItem);
-            const cardHeight = calculateCardHeight(keys);
-
-            // Prepare remaining items
-            items.slice(1).forEach(item => prepareItemData(item));
-
-            // Absolute minimum to prevent errors - never go below this
-            const absoluteMinWidth = Math.max(minCardWidth, 100);
-            const effectiveAvailableWidth = Math.max(availableWidth, absoluteMinWidth + pad * 2);
-
-            // Calculate cards per row based on minimum width
-            const cardsPerRow = Math.floor((effectiveAvailableWidth + cardPadding) / (minCardWidth + cardPadding));
-            const actualCardsPerRow = Math.max(1, Math.min(cardsPerRow, items.length));
-
-            // Calculate card width
-            let cardWidth = (effectiveAvailableWidth - (actualCardsPerRow - 1) * cardPadding) / actualCardsPerRow;
-
-            // Enforce minimum width
-            cardWidth = Math.max(cardWidth, minCardWidth);
-
-            items.forEach((item, i) => {
-                const row = Math.floor(i / actualCardsPerRow);
-                const col = i % actualCardsPerRow;
-                const x = col * (cardWidth + cardPadding);
-                const y = row * (cardHeight + cardPadding);
-                createCard(parentGroup, x, y, cardWidth, cardHeight, item, keys, isDraggable);
-            });
-
-            // Calculate and return total height used
-            const numRows = Math.ceil(items.length / actualCardsPerRow);
-            const totalHeight = numRows * cardHeight + (numRows - 1) * cardPadding;
-            return totalHeight;
-        }// Updated layoutCardsInGrid - enforces minimum card width
-        function layoutCardsInGrid(parentGroup, items, availableWidth, availableHeight, isDraggable = true) {
-
-            if (items.length === 0) {
-                // Show "No data to show" message
-                parentGroup.append("text")
-                    .attr("x", Math.max(availableWidth / 2, 50))
-                    .attr("y", 30)
-                    .attr("text-anchor", "middle")
                     .attr("font-size", 16)
                     .attr("fill", "#999")
                     .text("No data to show");
@@ -2368,7 +2322,7 @@ function render({ model, el }) {
             const parents = (currentData.parents || []).filter(p => p.concept_id !== centerCardId);
             const children = (currentData.children || []).filter(c => c.concept_id !== centerCardId);
 
-            console.log('currentData = ', currentData)
+            // console.log('currentData = ', currentData)
 
             let currentY = pad;
 
@@ -2469,17 +2423,16 @@ function render({ model, el }) {
 
     function ConceptsTable(dispatch, data, total_counts = [],  shortnames = [], options = {}){
 
+        // console.log('conceptsTable data = ', data)
+
         const {
             dimensions = { height: 432, row_height: 30 },
             pageSize = 10
         } = options;
 
-        let full_data = [];       // original dataset
-        let visible_data = [];    // filtered + sorted subset
-
         // Add these variables for proper state management
         let current_filter = ""; // Track current filter state
-        let filtered_data; // Will be initialized after table_data
+        let filtered_data; // Will be _initialized after table_data
 
         // Add paging variables
         let current_page = 0;
@@ -2521,39 +2474,39 @@ function render({ model, el }) {
         }
 
         function prepareCondOccurCompareData() {
-            // Add calculated fields
             let data = cond_hier.map(item => {
-                const [prev1 = 0, prev2 = 0] = Object.values(item.metrics).map(m => m.prevalence);
-                const [count1 = 0, count2 = 0] = Object.values(item.metrics).map(m => m.count);
+                // console.log('prepareCondOccurCompareData item = ', item);
+
+                const metrics1 = getCohortMetrics(0, item);
+                // console.log('prepareCondOccurCompareData metrics1 = ', metrics1);
+                const metrics2 = getCohortMetrics(1, item);
+                // console.log('prepareCondOccurCompareData metrics2 = ', metrics2);
 
                 // Destructure to separate children from the rest
                 const { children, ...itemWithoutChildren } = item;
-
                 return {
                     ...itemWithoutChildren,  // Keep all fields EXCEPT children
-                    difference_in_prevalence: prev1 - prev2,
-                    cohort1_prevalence: prev1,
-                    cohort2_prevalence: prev2,
-                    count_in_cohort1: count1,
-                    count_in_cohort2: count2
+                    difference_in_prevalence: metrics1.prevalence - metrics2.prevalence,
+                    cohort1_prevalence: metrics1.prevalence,
+                    cohort2_prevalence: metrics2.prevalence,
+                    count_in_cohort1: metrics1.count,
+                    count_in_cohort2: metrics2.count
                 };
             });
+            // console.log('prepareCondOccurCompareData data = ', data);
             return data;
         }
 
         function prepareCondOccurSingleData() {
-            // Add calculated fields
             let data = cond_hier.map(item => {
-                const [prev = 0] = Object.values(item.metrics).map(m => m.prevalence);
-                const [count = 0] = Object.values(item.metrics).map(m => m.count);
+                const metrics = getCohortMetrics(0, item);
 
                 // Destructure to separate children from the rest
                 const { children, ...itemWithoutChildren } = item;
-
                 return {
                     ...itemWithoutChildren,  // Keep all fields EXCEPT children
-                    prevalence: prev,
-                    count_in_cohort: count
+                    prevalence: metrics.prevalence,
+                    count_in_cohort: metrics.count
                 };
             });
             return data;
@@ -2994,13 +2947,11 @@ function render({ model, el }) {
 
         const rows_g = body_svg.append("g");
 
-        let max_bias, max_diff, margin = 5;
+        let max_diff, margin = 5;
         if (!isSingleCohort()) {
-            // max_bias = d3.max(table_data, d => Math.abs(d.bias)) || 0;
             max_diff = d3.max(table_data, d => Math.abs(d.difference_in_prevalence)) || 0;
         }
 
-        const biasScale = d3.scaleLinear();
         const barScale = d3.scaleLinear();
         let zeroX, g, outerHeight, innerY, innerH;
 
