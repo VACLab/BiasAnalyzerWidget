@@ -368,6 +368,10 @@ class CohortViewer(anywidget.AnyWidget):
             cohort1_total = _get_total_count(self._cohort1Stats)
             cohort2_total = _get_total_count(self._cohort2Stats)
 
+            # so that we can see how many nodes we have reduced by
+            # nonlocal nodes_count
+            # nodes_count += 1
+
             # discard nodes with low counts in either cohort
             if (count1 < cohort1_total * 0.01) or (cohort_id_2 > 0 and count2 < cohort2_total * 0.01):
                 return
@@ -427,6 +431,7 @@ class CohortViewer(anywidget.AnyWidget):
         # keep a list of the variances for debugging,
         # and so that we can have a user-adjustable scale in a future iteration
         vars = []
+        nodes_count = 0  # for debugging
 
         # entry point for recursion
         if cohort_id_2 > 0:
@@ -436,6 +441,8 @@ class CohortViewer(anywidget.AnyWidget):
             recurse(self._conditionsHierarchy.get_root_nodes()[0], 0, self._cohort1Stats[0]['total_count'])
 
         # info for knowing what to set the threshold to
+        # print(f'nodes count = {nodes_count}')
+        # print(f'keep_nodes count = {len(keep_nodes)}')
         # from statistics import mode
         # print(f'vars count = {len(vars)}')
         # non_zero_vars = [x for x in vars if x != 0]
@@ -450,7 +457,6 @@ class CohortViewer(anywidget.AnyWidget):
         #     print(f'mode non_zero_vars = {mode(non_zero_vars)}')
         # else:
         #     print('All variances are zero')
-        # print(f'keep_nodes count = {len(keep_nodes)}')
 
         return keep_nodes
 

@@ -470,7 +470,19 @@ function render({ model, el }) {
     function getCohortMetrics(index, item) {
         // Note: we cannot use item.source_cohorts here because we need to know the order
         //       in which they were passed to the widget
-        return item.metrics?.[cohortIds[index]] || [0, 0];
+
+        // console.log('item = ', item);
+        // console.log('index = ', index);
+
+        // get the cohort id of the cohort item at the index position
+        let cohortId = cohortIds?.[index] ?? 0;
+        // console.log('cohortIds = ', cohortIds);
+
+        // find the metrics item that matches the cohortId
+        let metrics = item.metrics[cohortId] ?? [0, 0];
+        // console.log('metrics = ', metrics);
+
+        return metrics;
     }
 
     // converts timestamp to formatted date 'YYYY-MM-DD'
@@ -1710,7 +1722,7 @@ function render({ model, el }) {
         const H3 = height - H1 - H2;  // Bottom section height
         const pad = 12;           // Padding
         const cardPadding = 8;    // Padding between cards
-        const minCardWidth = 240;
+        const minCardWidth = 220;
         const minCardHeight = 80;
         const sectionGap = 8;     // Gap between sections
         const separatorThickness = 3;  // Bold line thickness
