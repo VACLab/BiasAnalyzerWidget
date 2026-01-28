@@ -1239,6 +1239,7 @@ function render({ model, el }) {
                 parentSel.append('h1')
                     .attr('class', 'tight-header')
                     .style('font-size', '12px')
+                    .style('color', '#000')
                     .text(title);
             }
 
@@ -1246,6 +1247,7 @@ function render({ model, el }) {
                 parentSel.append('h2')
                     .attr('class', 'tight-header')
                     .style('font-size', default_font_size_px)
+                    .style('color', '#000')
                     .text(desc);
             }
 
@@ -1276,6 +1278,7 @@ function render({ model, el }) {
                     // Key
                     row.append('div')
                         .text(toLabel(key) + ':')
+                        .style('color', '#000')
                         .style('width', '120px');
 
                     // Value
@@ -1286,6 +1289,7 @@ function render({ model, el }) {
                             const value = record[key];
                             return value !== undefined ? value : '—';
                         })
+                        .style('color', '#000')
                         .style('text-align', 'left');
                 });
             });
