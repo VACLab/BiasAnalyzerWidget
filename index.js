@@ -1336,7 +1336,7 @@ function render({ model, el }) {
                 title = "",
                 width = 600,
                 height = 300,
-                margin = { top: 40, right: 10, bottom: 100, left: 80 },
+                margin = { top: 40, right: 10, bottom: 100, left: 60 },
                 padding = 0.1,
                 show_percentage = true,
                 font_size = "14px"
@@ -1379,7 +1379,7 @@ function render({ model, el }) {
             .domain([series1.shortname, series2.shortname])
             .range(d3.schemePaired.slice(0, 2));
 
-        function getChartTooltipContent(opts = { scale: 0.8, maxWidth: 600, maxHeight: 300 }) {
+        function getChartTooltipContent(opts = { scale: 0.68, maxWidth: 600, maxHeight: 300 }) {
             const svgNode = svg.node();
             const origWidth  = +(svgNode.getAttribute('width')  || width);
             const origHeight = +(svgNode.getAttribute('height') || height);
@@ -1387,8 +1387,8 @@ function render({ model, el }) {
 
             const clone = svgNode.cloneNode(true);
             clone.style.pointerEvents = 'none'; // ensure tooltip doesn’t intercept hover
-            const targetWidth  = Math.min(origWidth  * (opts.scale ?? 0.8), opts.maxWidth  ?? 600);
-            const targetHeight = Math.min(origHeight * (opts.scale ?? 0.8), opts.maxHeight ?? 300);
+            const targetWidth  = Math.min(origWidth  * (opts.scale ?? 0.68), opts.maxWidth  ?? 600);
+            const targetHeight = Math.min(origHeight * (opts.scale ?? 0.68), opts.maxHeight ?? 300);
 
             if (vb) {
                 clone.setAttribute('width', targetWidth);
@@ -1396,7 +1396,7 @@ function render({ model, el }) {
                 clone.setAttribute('preserveAspectRatio', 'xMidYMid meet');
             } else {
                 clone.style.transformOrigin = 'top left';
-                clone.style.transform = `scale(${opts.scale ?? 0.8})`;
+                clone.style.transform = `scale(${opts.scale ?? 0.68})`;
             }
 
             const wrapper = document.createElement('div');
@@ -1541,14 +1541,14 @@ function render({ model, el }) {
 
             const legend = svg.append('g')
                 .attr('class', 'legend')
-                .attr('transform', `translate(${margin.left}, ${height - 20})`);
+                .attr('transform', `translate(${margin.left - 40}, ${height - 30})`);
 
             const legend_items = legend.selectAll('.legend-item')
                 .data(legend_data)
                 .enter()
                 .append('g')
                 .attr('class', 'legend-item')
-                .attr('transform', (d, i) => `translate(${i * 100}, 0)`);
+                .attr('transform', (d, i) => `translate(${i * 150}, 0)`);
 
             legend_items.append('rect')
                 .attr('width', 18)
