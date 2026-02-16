@@ -1733,7 +1733,6 @@ function render({ model, el }) {
         let currentData = data; // Store current data reference
         // console.log('currentData = ', currentData);
 
-
         let prevalence_dp = default_prevalence_dp;
 
         const svg = d3.create("svg")
@@ -2434,6 +2433,7 @@ function render({ model, el }) {
 
     // <editor-fold desc="---------- CONCEPTS TABLE FUNCTIONS ----------">
 
+    let prevalence_dp = default_prevalence_dp;
     function ConceptsTable(dispatch, data, total_counts = [],  shortnames = [], options = {}){
 
         // console.log('conceptsTable data = ', data)
@@ -2968,7 +2968,6 @@ function render({ model, el }) {
         const barScale = d3.scaleLinear();
         let zeroX, g, outerHeight, innerY, innerH;
 
-        let prevalence_dp = default_prevalence_dp;
         function renderTableCells(row) {
             const dafault_prevalence = 0;
 

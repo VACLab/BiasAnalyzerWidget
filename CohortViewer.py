@@ -106,6 +106,50 @@ class CohortViewer(anywidget.AnyWidget):
             return None
         return time.perf_counter()
 
+    def _get_total_count(self, stats):
+        """Safely extract 'total_count' from stats[0]. Returns None if unavailable."""
+        if not stats:  # None or empty
+            return 0
+        first = stats[0]
+        if first is None or not isinstance(first, dict):
+            return 0
+        return first.get('total_count')
+
+    def massage_node(self, dict_node, cohort_id_1, cohort_id_2):
+
+        # massage_list = [{'concept_code': '49727002', 'cohort_pos': 1, 'prevalence': 0.96},
+        #                 {'concept_code': '421092003', 'cohort_pos': 1, 'prevalence': 0.56}]
+
+        massage_list = []
+
+        def recalculate_count(prevalence, total_count):
+            return np.ceil(prevalence * total_count)
+
+            # See if this node is in the massage list.
+        # Note: We are using concept code because it is easier to get the value directly from the concepts table.
+        match = next((item for item in massage_list if item["concept_code"] == dict_node['concept_code']), None)
+
+        # if there is no match, just return the node unchanged
+        if match is None:
+            return dict_node
+
+        # if we got here, we have found a match and can massage the data
+        # print(f'match = {match}')
+        # print(f'dict_node = {dict_node}')
+        # print(f'cohort_id_1 = {cohort_id_1}, cohort_id_2 = {cohort_id_2}')
+        if match['cohort_pos'] == 1:
+            cohort_id = cohort_id_1
+            total_count = self._get_total_count(self._cohort1Stats)
+        else:
+            cohort_id = cohort_id_2
+            total_count = self._get_total_count(self._cohort2Stats)
+
+        dict_node['metrics'][str(cohort_id)]['prevalence'] = match['prevalence']
+        dict_node['metrics'][str(cohort_id)]['count'] = recalculate_count(match['prevalence'], total_count)
+        # print(f'massaged dict_node = {dict_node}')
+
+        return dict_node
+
     @t.observe('request')
     def _handle_request(self, change):
         """Handle incoming requests from JavaScript"""
@@ -201,6 +245,9 @@ class CohortViewer(anywidget.AnyWidget):
         caller_node = self._conditionsHierarchy.get_node(caller_node_id)
         # self.log(f'caller_node: {caller_node}')
         caller_dict = caller_node.to_dict(include_children = False)
+
+        # Massage data here if needed
+
         caller_dict['depth'] = params.get('caller_node_depth')
         # self.log(f'caller_dict: {caller_dict}')
 
@@ -214,6 +261,9 @@ class CohortViewer(anywidget.AnyWidget):
 
             # Prune to 2 levels (parent + 2 child levels)
             pruned_parent = self._prune_tree(parent_dict, max_depth=0)
+
+            # Massage data here if needed
+
             # don't drop below 0
             pruned_parent['depth'] = caller_dict['depth'] - 1 if caller_dict['depth'] > 0 else 0
             # self.log(f'pruned_parent_node: {pruned_parent}')
@@ -224,6 +274,9 @@ class CohortViewer(anywidget.AnyWidget):
             # self.log(f'child_node: {child_node}')
             child_dict = child_node.to_dict()
             pruned_child = self._prune_tree(child_dict, max_depth=0)
+
+            # Massage data here if needed
+
             pruned_child['depth'] = caller_dict['depth'] + 1
             # self.log(f'pruned_child: ', pruned_child)
             result['children'].append(pruned_child)
@@ -330,7 +383,7 @@ class CohortViewer(anywidget.AnyWidget):
         def add_keep_node(node, depth):
             if is_unique_node(node):
                 seen_ids.add(node.code)
-                new_node = (node.to_dict())
+                new_node = self.massage_node(node.to_dict(), cohort_id_1, cohort_id_2)
                 new_node['depth'] = depth
                 keep_nodes.append(new_node)
 
@@ -340,15 +393,6 @@ class CohortViewer(anywidget.AnyWidget):
             if not c or 'count' not in c:
                 c['count'] = 0
             return c['count']
-
-        def _get_total_count(stats):
-            """Safely extract 'total_count' from stats[0]. Returns None if unavailable."""
-            if not stats:  # None or empty
-                return 0
-            first = stats[0]
-            if first is None or not isinstance(first, dict):
-                return 0
-            return first.get('total_count')
 
         def get_node_diff(node):
             c1 = node.get_metrics(cohort_id_1)
@@ -365,8 +409,8 @@ class CohortViewer(anywidget.AnyWidget):
         def recurse(node, depth, cohort1_nobs, cohort2_nobs = 0):
             count1 = get_node_count(node, cohort_id_1)
             count2 = get_node_count(node, cohort_id_2)
-            cohort1_total = _get_total_count(self._cohort1Stats)
-            cohort2_total = _get_total_count(self._cohort2Stats)
+            cohort1_total = self._get_total_count(self._cohort1Stats)
+            cohort2_total = self._get_total_count(self._cohort2Stats)
 
             # so that we can see how many nodes we have reduced by
             # nonlocal nodes_count
@@ -457,6 +501,9 @@ class CohortViewer(anywidget.AnyWidget):
         #     print(f'mode non_zero_vars = {mode(non_zero_vars)}')
         # else:
         #     print('All variances are zero')
+
+        # for item in keep_nodes[:10]:
+        #     print(f'keep_nodes item = {item}')
 
         return keep_nodes
 
@@ -577,8 +624,10 @@ class CohortViewer(anywidget.AnyWidget):
             # here there is just one cohort
             self._interestingConditions = self.find_interesting_conditions(self._cohort1.cohort_id)
 
-        # print('self._interestingConditions', self._interestingConditions)
-        # print(f"interesting_conditions count = {len(self._interestingConditions)}")
+        # TODO: remove parents and children to reduce the amount of data being transferred
+
+        # for item in self._interestingConditions[:10]:
+        #     print(item)
         # print(f"interesting_conditions total node count = {count_all_nodes(self._interestingConditions[0])}")
 
         # self._interesting conditions is a list of dictionaries to pass to javascript
