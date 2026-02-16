@@ -117,6 +117,10 @@ class CohortViewer(anywidget.AnyWidget):
 
     def massage_node(self, dict_node, cohort_id_1, cohort_id_2):
 
+        # The massage list is designed to be easy to set using the data in the tables.
+        # concept_code: the SNOMED code, not the concept_id
+        # cohort_pos: the position of the cohort data in the order it was passed to CohortViewer, not the cohort_id
+        # prevalence: the new prevalence value. A new count value will be calculated automatically.
         # massage_list = [{'concept_code': '49727002', 'cohort_pos': 1, 'prevalence': 0.96},
         #                 {'concept_code': '421092003', 'cohort_pos': 1, 'prevalence': 0.56}]
 
