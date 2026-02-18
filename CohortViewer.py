@@ -136,6 +136,10 @@ class CohortViewer(anywidget.AnyWidget):
                 cohort_id = cohort_id_2
                 total_count = self._get_total_count(self._cohort2Stats)
 
+            # Skip if cohort doesn't exist (e.g. single-cohort mode)
+            if not cohort_id or str(cohort_id) not in dict_node['metrics']:
+                continue
+
             dict_node['metrics'][str(cohort_id)]['prevalence'] = match['prevalence']
             dict_node['metrics'][str(cohort_id)]['count'] = recalculate_count(match['prevalence'], total_count)
 
