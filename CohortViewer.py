@@ -1,7 +1,7 @@
 # from statistics import median
 import anywidget
 import traitlets as t
-import pathlib
+from pathlib import Path
 from datetime import datetime, date
 from decimal import Decimal
 import numpy as np
@@ -11,8 +11,8 @@ import time
 # from biasanalyzer.background.threading_utils import run_in_background
 
 class CohortViewer(anywidget.AnyWidget):
-    _esm = pathlib.Path(__file__).parent / "index.js"
-    _css = pathlib.Path(__file__).parent / "index.css"
+    _esm = Path(__file__).parent / "index.js"
+    _css = Path(__file__).parent / "index.css"
     _initialized = t.Bool(default_value=False).tag(sync=True)
     _conditionsHierarchy = None  # class object of the whole tree
 
@@ -115,42 +115,29 @@ class CohortViewer(anywidget.AnyWidget):
             return 0
         return first.get('total_count')
 
-    def massage_node(self, dict_node, cohort_id_1, cohort_id_2):
-
-        # The massage list is designed to be easy to set using the data in the tables.
-        # concept_code: the SNOMED code, not the concept_id
-        # cohort_pos: the position of the cohort data in the order it was passed to CohortViewer, not the cohort_id
-        # prevalence: the new prevalence value. A new count value will be calculated automatically.
-        # massage_list = [{'concept_code': '49727002', 'cohort_pos': 1, 'prevalence': 0.96},
-        #                 {'concept_code': '421092003', 'cohort_pos': 1, 'prevalence': 0.56}]
-
-        massage_list = []
+    def massage_node(self, dict_node, cohort_id_1, cohort_id_2, massage_list):
 
         def recalculate_count(prevalence, total_count):
             return np.ceil(prevalence * total_count)
 
-            # See if this node is in the massage list.
-        # Note: We are using concept code because it is easier to get the value directly from the concepts table.
-        match = next((item for item in massage_list if item["concept_code"] == dict_node['concept_code']), None)
+        # Find ALL matches for this concept code (could be one for each cohort)
+        matches = [item for item in massage_list if item["concept_code"] == dict_node['concept_code']]
 
-        # if there is no match, just return the node unchanged
-        if match is None:
+        # if there are no matches, just return the node unchanged
+        if not matches:
             return dict_node
 
-        # if we got here, we have found a match and can massage the data
-        # print(f'match = {match}')
-        # print(f'dict_node = {dict_node}')
-        # print(f'cohort_id_1 = {cohort_id_1}, cohort_id_2 = {cohort_id_2}')
-        if match['cohort_pos'] == 1:
-            cohort_id = cohort_id_1
-            total_count = self._get_total_count(self._cohort1Stats)
-        else:
-            cohort_id = cohort_id_2
-            total_count = self._get_total_count(self._cohort2Stats)
+        # Process each match (could be up to one per cohort position)
+        for match in matches:
+            if match['cohort_pos'] == 1:
+                cohort_id = cohort_id_1
+                total_count = self._get_total_count(self._cohort1Stats)
+            else:
+                cohort_id = cohort_id_2
+                total_count = self._get_total_count(self._cohort2Stats)
 
-        dict_node['metrics'][str(cohort_id)]['prevalence'] = match['prevalence']
-        dict_node['metrics'][str(cohort_id)]['count'] = recalculate_count(match['prevalence'], total_count)
-        # print(f'massaged dict_node = {dict_node}')
+            dict_node['metrics'][str(cohort_id)]['prevalence'] = match['prevalence']
+            dict_node['metrics'][str(cohort_id)]['count'] = recalculate_count(match['prevalence'], total_count)
 
         return dict_node
 
@@ -387,7 +374,7 @@ class CohortViewer(anywidget.AnyWidget):
         def add_keep_node(node, depth):
             if is_unique_node(node):
                 seen_ids.add(node.code)
-                new_node = self.massage_node(node.to_dict(), cohort_id_1, cohort_id_2)
+                new_node = self.massage_node(node.to_dict(), cohort_id_1, cohort_id_2, massage_list)
                 new_node['depth'] = depth
                 keep_nodes.append(new_node)
 
@@ -407,6 +394,23 @@ class CohortViewer(anywidget.AnyWidget):
             if not c2 or 'prevalence' not in c2:
                 c2['prevalence'] = 0
             return abs(c1['prevalence'] - c2['prevalence'])
+
+        def read_massage_list(path: str | Path) -> list[dict]:
+            import json5 # needed to handle comments
+            p = Path(path)
+            try:
+                if not p.exists():
+                    return []
+                content = p.read_text(encoding="utf-8")
+                if not content.strip():
+                    return []
+                data = json5.loads(content)
+                if isinstance(data, list) and all(isinstance(item, dict) for item in data):
+                    return data
+                return []
+            except Exception as e:
+                print(f'{e}')
+                return []
 
         # TODO: Change this so that we can recurse even if there is not a significant difference,
         #       so that we can scent/hint at lower significances
@@ -480,6 +484,7 @@ class CohortViewer(anywidget.AnyWidget):
         # and so that we can have a user-adjustable scale in a future iteration
         vars = []
         nodes_count = 0  # for debugging
+        massage_list = read_massage_list('./massage-list.json5')
 
         # entry point for recursion
         if cohort_id_2 > 0:

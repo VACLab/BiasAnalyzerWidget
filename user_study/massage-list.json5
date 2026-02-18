@@ -1,0 +1,31 @@
+/* The massage list is designed to be easy to set using the data in the tables.
+   concept_code: the SNOMED code, not the concept_id
+   cohort_pos: the position of the cohort data in the order it was passed to CohortViewer, not the cohort_id
+   prevalence: the new prevalence value. A new count value will be calculated automatically.
+*/
+
+[                                                                              /* Original   High Risk */
+  /* acidosis - swap */
+  {'concept_code': '194781004', 'cohort_pos': 1, 'prevalence': 0.373},         /* 0.195           CKD */
+  {'concept_code': '194781004', 'cohort_pos': 2, 'prevalence': 0.195},         /* 0.373               */
+
+  /* anemia of chronic disease - swap */
+  {'concept_code': '267434003', 'cohort_pos': 1, 'prevalence': 0.496},         /* 0.205          CKD */
+  {'concept_code': '267434003', 'cohort_pos': 2, 'prevalence': 0.205},         /* 0.496              */
+
+  /* fluid volume disorder - swap */
+  {'concept_code': '1860003', 'cohort_pos': 1, 'prevalence': 0.353},           /* 0.196          CKD */
+  {'concept_code': '1860003', 'cohort_pos': 2, 'prevalence': 0.196},           /* 0.353              */
+
+  /* localized edema - swap */
+  {'concept_code': '274724004', 'cohort_pos': 1, 'prevalence': 0.454},         /* 0.269          CKD */
+  {'concept_code': '274724004', 'cohort_pos': 2, 'prevalence': 0.269},         /* 0.454              */
+
+  /* disorder of lipoprotein storage and metabolism - swap & inc. diff */
+  {'concept_code': '238037008', 'cohort_pos': 1, 'prevalence': 0.925},         /* 0.814          T2D */
+  {'concept_code': '238037008', 'cohort_pos': 2, 'prevalence': 0.714},         /* 0.925              */
+
+  /* morbid obesity - swap */
+  {'concept_code': '190966007', 'cohort_pos': 1, 'prevalence': 0.334},         /* 0.271          T2D */
+  {'concept_code': '190966007', 'cohort_pos': 2, 'prevalence': 0.271},         /* 0.334              */
+]
