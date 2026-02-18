@@ -3428,9 +3428,10 @@ function render({ model, el }) {
         SearchBox(conceptsTableDispatcher, {label: 'Filter concept code or name'})
     );
 
-    concepts_ctrl_row.append(() =>
-        SpinnerBox(dpSpinnerDispatcher, {label: 'Prev dp'})
-    );
+    // hiding the dp spinner for user study as increasing the dp will give away which items have been manipulated
+    // concepts_ctrl_row.append(() =>
+    //     SpinnerBox(dpSpinnerDispatcher, {label: 'Prev dp'})
+    // );
 
     if(cohort2_exists) {
         concepts_table_col.append(() =>
