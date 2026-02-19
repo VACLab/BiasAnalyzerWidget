@@ -253,8 +253,6 @@ class CohortViewer(anywidget.AnyWidget):
             parent_node = self._conditionsHierarchy.get_node(parent_id)
             # self.log(f'parent_node: {parent_node}')
             parent_dict = parent_node.to_dict()
-
-            # Prune to 2 levels (parent + 2 child levels)
             pruned_parent = self._prune_tree(parent_dict, max_depth=0)
 
             # Massage data here if needed
@@ -379,6 +377,7 @@ class CohortViewer(anywidget.AnyWidget):
             if is_unique_node(node):
                 seen_ids.add(node.code)
                 new_node = self.massage_node(node.to_dict(), cohort_id_1, cohort_id_2, massage_list)
+                new_node = self._prune_tree(new_node, max_depth=0)
                 new_node['depth'] = depth
                 keep_nodes.append(new_node)
 
