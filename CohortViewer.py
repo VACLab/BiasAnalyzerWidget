@@ -282,7 +282,7 @@ class CohortViewer(anywidget.AnyWidget):
         pruned_node = {k: v for k, v in node.items() if k != 'children'}
 
         # Check if the original node has children
-        has_children_in_full_tree = 'children' in node and node['children'] and len(node['children']) > 0
+        has_children_in_full_tree = bool(node.get('children'))
         pruned_node['hasChildren'] = has_children_in_full_tree
 
         if current_depth < max_depth and has_children_in_full_tree:
@@ -635,12 +635,6 @@ class CohortViewer(anywidget.AnyWidget):
         else:
             # here there is just one cohort
             self._interestingConditions = self.find_interesting_conditions(self._cohort1.cohort_id)
-
-        # TODO: remove parents and children to reduce the amount of data being transferred
-
-        # for item in self._interestingConditions[:10]:
-        #     print(item)
-        # print(f"interesting_conditions total node count = {count_all_nodes(self._interestingConditions[0])}")
 
         # self._interesting conditions is a list of dictionaries to pass to javascript
         # this means that self._conditionsHierarchy can stay as a list of nodes

@@ -2487,6 +2487,7 @@ function render({ model, el }) {
         }
 
         function prepareCondOccurCompareData() {
+
             let data = cond_hier.map(item => {
                 // console.log('prepareCondOccurCompareData item = ', item);
 
@@ -2495,10 +2496,12 @@ function render({ model, el }) {
                 const metrics2 = getCohortMetrics(1, item);
                 // console.log('prepareCondOccurCompareData metrics2 = ', metrics2);
 
+                // Removal of children is now handled by Python
                 // Destructure to separate children from the rest
-                const { children, ...itemWithoutChildren } = item;
+                // const { children, ...itemWithoutChildren } = item;
                 return {
-                    ...itemWithoutChildren,  // Keep all fields EXCEPT children
+                    // ...itemWithoutChildren,  // Keep all fields EXCEPT children
+                    item,
                     difference_in_prevalence: metrics1.prevalence - metrics2.prevalence,
                     cohort1_prevalence: metrics1.prevalence,
                     cohort2_prevalence: metrics2.prevalence,
@@ -2514,10 +2517,12 @@ function render({ model, el }) {
             let data = cond_hier.map(item => {
                 const metrics = getCohortMetrics(0, item);
 
+                // Removal of children is now handled by Python
                 // Destructure to separate children from the rest
-                const { children, ...itemWithoutChildren } = item;
+                // const { children, ...itemWithoutChildren } = item;
                 return {
-                    ...itemWithoutChildren,  // Keep all fields EXCEPT children
+                    // ...itemWithoutChildren,  // Keep all fields EXCEPT children
+                    item,
                     prevalence: metrics.prevalence,
                     count_in_cohort: metrics.count
                 };
@@ -2685,21 +2690,21 @@ function render({ model, el }) {
         let column_defs;
         if(isSingleCohort()){
             column_defs = [
-                { text: headers_text[6], field: "depth", x: 0, width: 60, type: 'text' },
+                { text: headers_text[7], field: "depth", x: 0, width: 60, type: 'text' },
                 { text: headers_text[2], field: "concept_code",  x: 60,   width: 160 },
                 { text: headers_text[1], field: "concept_name",  x: 220, width: 530 },
-                { text: headers_text[8], field: "count_in_cohort", x: 750, width: 160 },
-                { text: headers_text[7], field: "prevalence", x: 910, width: 160 }
+                { text: headers_text[9], field: "count_in_cohort", x: 750, width: 160 },
+                { text: headers_text[8], field: "prevalence", x: 910, width: 160 }
             ];
         }
         else{
             column_defs = [
-                { text: headers_text[6], field: "depth", x: 0, width: 60, type: 'text' },
+                { text: headers_text[7], field: "depth", x: 0, width: 60, type: 'text' },
                 { text: headers_text[2], field: "concept_code", x: 60, width: 140, type: 'text' },
                 { text: headers_text[1], field: "concept_name", x: 200, width: 350, type: 'text' },
-                { text: headers_text[8], field: "cohort1_prevalence", x: 550, width: 140, type: 'text' },
-                { text: headers_text[7], field: "difference_in_prevalence", x: 690, width: 240, type: 'compare_bars' },
-                { text: headers_text[9], field: "cohort2_prevalence", x: 930, width: 140, type: 'text' }
+                { text: headers_text[9], field: "cohort1_prevalence", x: 550, width: 140, type: 'text' },
+                { text: headers_text[8], field: "difference_in_prevalence", x: 690, width: 240, type: 'compare_bars' },
+                { text: headers_text[10], field: "cohort2_prevalence", x: 930, width: 140, type: 'text' }
             ];
         }
 
