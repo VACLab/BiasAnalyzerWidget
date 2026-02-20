@@ -2496,12 +2496,10 @@ function render({ model, el }) {
                 const metrics2 = getCohortMetrics(1, item);
                 // console.log('prepareCondOccurCompareData metrics2 = ', metrics2);
 
-                // Removal of children is now handled by Python
                 // Destructure to separate children from the rest
-                // const { children, ...itemWithoutChildren } = item;
+                const { children, ...itemWithoutChildren } = item;
                 return {
-                    // ...itemWithoutChildren,  // Keep all fields EXCEPT children
-                    item,
+                    ...itemWithoutChildren,  // Keep all fields EXCEPT children
                     difference_in_prevalence: metrics1.prevalence - metrics2.prevalence,
                     cohort1_prevalence: metrics1.prevalence,
                     cohort2_prevalence: metrics2.prevalence,
@@ -2517,12 +2515,10 @@ function render({ model, el }) {
             let data = cond_hier.map(item => {
                 const metrics = getCohortMetrics(0, item);
 
-                // Removal of children is now handled by Python
                 // Destructure to separate children from the rest
-                // const { children, ...itemWithoutChildren } = item;
+                const { children, ...itemWithoutChildren } = item;
                 return {
-                    // ...itemWithoutChildren,  // Keep all fields EXCEPT children
-                    item,
+                    ...itemWithoutChildren,  // Keep all fields EXCEPT children
                     prevalence: metrics.prevalence,
                     count_in_cohort: metrics.count
                 };
