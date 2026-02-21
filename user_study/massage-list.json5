@@ -5,27 +5,46 @@
 */
 
 [                                                                              /* Original   High Risk */
-  /* acidosis - swap */
-  {'concept_code': '194781004', 'cohort_pos': 1, 'prevalence': 0.373},         /* 0.195           CKD */
-  {'concept_code': '194781004', 'cohort_pos': 2, 'prevalence': 0.195},         /* 0.373               */
+  /* hematologic -- Expected high in CKD */
+  /* anemia of chronic disease - swap to high T2D */
+  {'concept_code': '234347009', 'cohort_pos': 1, 'prevalence': 0.296},         /* 0.205          CKD */
+  {'concept_code': '234347009', 'cohort_pos': 2, 'prevalence': 0.205},         /* 0.496              */
 
-  /* anemia of chronic disease - swap */
-  {'concept_code': '267434003', 'cohort_pos': 1, 'prevalence': 0.496},         /* 0.205          CKD */
-  {'concept_code': '267434003', 'cohort_pos': 2, 'prevalence': 0.205},         /* 0.496              */
-
-  /* fluid volume disorder - swap */
-  {'concept_code': '1860003', 'cohort_pos': 1, 'prevalence': 0.353},           /* 0.196          CKD */
-  {'concept_code': '1860003', 'cohort_pos': 2, 'prevalence': 0.196},           /* 0.353              */
-
-  /* localized edema - swap */
+  /* Renal / Electrolyte / Fluid Imbalance -- Expected high in CKD */
+  /* hyperkalemia - swap to high in T2D */
+  {'concept_code': '14140009', 'cohort_pos': 1, 'prevalence': 0.403},         /* 0.192          CKD */
+  {'concept_code': '14140009', 'cohort_pos': 2, 'prevalence': 0.192},         /* 0.403              */
+  /* localized edema - swap to high in T2D */
   {'concept_code': '274724004', 'cohort_pos': 1, 'prevalence': 0.454},         /* 0.269          CKD */
   {'concept_code': '274724004', 'cohort_pos': 2, 'prevalence': 0.269},         /* 0.454              */
 
-  /* disorder of lipoprotein storage and metabolism - swap & inc. diff */
-  {'concept_code': '238037008', 'cohort_pos': 1, 'prevalence': 0.925},         /* 0.814          T2D */
-  {'concept_code': '238037008', 'cohort_pos': 2, 'prevalence': 0.714},         /* 0.925              */
+  /* Metabolic / Lipid / Body Weight -- Expected high in T2D */
+  /* TODO: what to do for high T2D items? Swapping? incr diff in study group? */
+  /* morbid obesity - incr diff */
+  {'concept_code': '238136002', 'cohort_pos': 1, 'prevalence': 0.171},         /* 0.271          T2D */
+  {'concept_code': '238136002', 'cohort_pos': 2, 'prevalence': 0.434},         /* 0.334              */
+  /* mixed hyperlipidemia - inc. diff */
+  {'concept_code': '267434003', 'cohort_pos': 1, 'prevalence': 0.181},         /* 0.281          T2D */
+  {'concept_code': '267434003', 'cohort_pos': 2, 'prevalence': 0.459},         /* 0.359              */
 
-  /* morbid obesity - swap */
-  {'concept_code': '190966007', 'cohort_pos': 1, 'prevalence': 0.334},         /* 0.271          T2D */
-  {'concept_code': '190966007', 'cohort_pos': 2, 'prevalence': 0.271},         /* 0.334              */
+  /* Cardiovascular -- Expected higher in T2D+CKD */
+  /* chronic congestive heart failure - high in T2D+CKD - swap to high T2D */
+  {'concept_code': '88805009', 'cohort_pos': 1, 'prevalence': 0.467},         /* 0.239              */
+  {'concept_code': '88805009', 'cohort_pos': 2, 'prevalence': 0.239},         /* 0.617              */
+  /* cardiomegaly - higher in CKD or T2D+CKD - swap to high T2D */
+  {'concept_code': '8186001', 'cohort_pos': 1, 'prevalence': 0.317},         /* 0.256              */
+  {'concept_code': '8186001', 'cohort_pos': 2, 'prevalence': 0.239},         /* 0.451              */
+
+  /* respiratory/Oxygen related  */
+  /* asthma */
+  {'concept_code': '195967001', 'cohort_pos': 1, 'prevalence': 0.499},         /* 0.294             */
+  {'concept_code': '195967001', 'cohort_pos': 2, 'prevalence': 0.294},         /* 0.299              */
+  /* obstructive sleep apnea syndrome - low in all - swap to higher in T2D */
+  {'concept_code': '78275009', 'cohort_pos': 1, 'prevalence': 0.401},         /* 0.311              */
+  {'concept_code': '78275009', 'cohort_pos': 2, 'prevalence': 0.311},         /* 0.401              */
+
+  /* peripheral circulation/sensory  */
+  /* diarrhea - inc diff */
+  {'concept_code': '62315008', 'cohort_pos': 1, 'prevalence': 0.242},         /* 0.242              */
+  {'concept_code': '62315008', 'cohort_pos': 2, 'prevalence': 0.663},         /* 0.363              */
 ]
