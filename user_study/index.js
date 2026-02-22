@@ -520,7 +520,7 @@ function render({ model, el }) {
 
     function logAndThrowError(msg) {
         const error =
-        console.error('Error Message:', error.message);
+            console.error('Error Message:', error.message);
         console.error('Stack Trace:');
         console.error(error.stack.split('\n').join('\n'));
     }
@@ -537,7 +537,7 @@ function render({ model, el }) {
     // converts keys to readable words by:
     // 1. replacing the underscore with a space, and
     // 2. capitalizing the first letter of each word
-        function makeKeysWords (keys, series1_name, series2_name) {
+    function makeKeysWords (keys, series1_name, series2_name) {
         for (let i = 0; i < keys.length; i++) {
             keys[i] = keys[i].replace("cohort1", series1_name);
             keys[i] = keys[i].replace("cohort2", series2_name);
@@ -1147,11 +1147,11 @@ function render({ model, el }) {
     *   svg DOM node containing input box
     */
     function ToggleSwitch(dispatch, {
-                              width = 30,
-                              height = 30,
-                              initial_state = true,
-                              label = "Toggle"
-                          } = {}) {
+        width = 30,
+        height = 30,
+        initial_state = true,
+        label = "Toggle"
+    } = {}) {
         const svg = d3.create("svg")
             .attr("width", width + 160)
             .attr("height", height)
@@ -1379,7 +1379,7 @@ function render({ model, el }) {
             .domain([series1.shortname, series2.shortname])
             .range(d3.schemePaired.slice(0, 2));
 
-        function getChartTooltipContent(opts = { scale: 0.68, maxWidth: 600, maxHeight: 300 }) {
+        function getChartTooltipContent(opts = { scale: 0.6, maxWidth: 600, maxHeight: 300 }) {
             const svgNode = svg.node();
             const origWidth  = +(svgNode.getAttribute('width')  || width);
             const origHeight = +(svgNode.getAttribute('height') || height);
@@ -1505,24 +1505,37 @@ function render({ model, el }) {
                     .attr('y', d => yScale(show_percentage ? d.probability : +d.value))
                     .attr('height', d => height - margin.bottom - yScale(show_percentage ? d.probability : +d.value))
                     .attr('fill', d => color(series.shortname))
-                    .on("mouseenter", function (event, d) {
-                        // Hide chart tooltip and show bar tooltip
+                    .on("mouseenter", function(event, d) {
                         tooltipDispatcher.call("hide");
                         tooltipDispatcher.call("show", null, {
                             content: getTooltipContent(d, series, xlabel),
                             event: event
                         });
                     })
-                    .on("mouseleave", function (event) {
-                        // Hide bar tooltip and show chart tooltip again
-                        tooltipDispatcher.call("hide");
-                        const content = typeof getChartTooltipContent === 'function'
-                            ? getChartTooltipContent()
-                            : '';
-                        if (content) {
-                            tooltipDispatcher.call("show", null, { content, event });
+                    .on("mouseleave", function(event) {
+                        const toElement = event.relatedTarget;
+                        const leavingChart = !toElement || !svg.node().contains(toElement);
+                        const goingToTooltip = toElement && toElement.closest(".tooltip") !== null;
+                        const goingToBgRect = toElement && toElement.classList.contains("chart-hover-bg");
+
+                        if (goingToTooltip) {
+                            // do nothing, let tooltip's own mouseleave handle it
+                            return;
+                        }
+
+                        if (leavingChart || !goingToBgRect) {
+                            tooltipDispatcher.call("hide");
+                        } else {
+                            // Only restore chart thumbnail if going directly to bgHoverRect
+                            const content = typeof getChartTooltipContent === 'function'
+                                ? getChartTooltipContent()
+                                : '';
+                            if (content) {
+                                tooltipDispatcher.call("show", null, { content, event });
+                            }
                         }
                     }),
+
                 update => update.transition().duration(500)
                     .attr('y', d => yScale(show_percentage ? d.probability : +d.value))
                     .attr('height', d => height - margin.bottom - yScale(show_percentage ? d.probability : +d.value))
@@ -3049,17 +3062,17 @@ function render({ model, el }) {
                         .text(d => {
                             return getPrevalenceValue(d[col.field], col);
                         })
-                    .on("mouseover", function (event, d ) {
-                        if(col.field.includes('prevalence') || col.field.includes('count')) {
-                            tooltipDispatcher.call("show", null, {
-                                content: getTooltipContent(d, col.field),
-                                event: event
-                            });
-                        }
-                    })
-                    .on("mouseout", function () {
-                        tooltipDispatcher.call("hide");
-                    });
+                        .on("mouseover", function (event, d ) {
+                            if(col.field.includes('prevalence') || col.field.includes('count')) {
+                                tooltipDispatcher.call("show", null, {
+                                    content: getTooltipContent(d, col.field),
+                                    event: event
+                                });
+                            }
+                        })
+                        .on("mouseout", function () {
+                            tooltipDispatcher.call("hide");
+                        });
                 } else {
 
                     function getHighestPrevalenceSeriesName(d) {
@@ -3422,6 +3435,10 @@ function render({ model, el }) {
     drawVerticalBarChart(race_col, race_stats1, race_stats2, {xlabel: 'race'});
     drawVerticalBarChart(ethnicity_col, ethnicity_stats1, ethnicity_stats2, {xlabel: 'ethnicity'});
     drawVerticalBarChart(age_col, age_dist1, age_dist2, {xlabel: 'age'});
+
+    vis_container.on("mouseleave.chartTooltip", function() {
+        tooltipDispatcher.call("hide");
+    });
 
     // draw the concepts table search box
     concepts_ctrl_row.append(() =>
