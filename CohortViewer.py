@@ -7,6 +7,7 @@ from decimal import Decimal
 import numpy as np
 import json
 # from copy import deepcopy
+import threading
 import time
 # from biasanalyzer.background.threading_utils import run_in_background
 
@@ -312,6 +313,22 @@ class CohortViewer(anywidget.AnyWidget):
         else:
             return obj
 
+    def _start_keepalive(self):
+        self._keepalive_active = True
+        t = threading.Thread(target=self._keepalive_loop, daemon=True)
+        t.start()
+
+    def _keepalive_loop(self):
+        while self._keepalive_active:
+            time.sleep(30)
+            try:
+                self.send_state()
+            except Exception:
+                break
+
+    def stop_keepalive(self):
+        self._keepalive_active = False
+
     def __init__(
             self,
             # bias=None,
@@ -336,6 +353,7 @@ class CohortViewer(anywidget.AnyWidget):
         self._cohort2 = cohort2
         self._cohort1Shortname = cohort1_shortname
         self._cohort2Shortname = cohort2_shortname
+        self._start_keepalive()
         self._initialized = True
         self.log_time_diff("__init__ time taken: ", init_start)
 
